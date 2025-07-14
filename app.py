@@ -176,7 +176,7 @@ with tab2:
                     cust_mask = (df['customer_no_hashed'] == customer_input) | (df['beneficiary_name_hashed'] == customer_input)
                     df_cust = df[cust_mask].copy()  # ensure DataFrame
                     st.write(f"DEBUG: Number of transactions in df_cust for this customer: {len(df_cust)}")
-                    st.dataframe(df_cust, use_container_width=True)
+                    st.dataframe(df_cust[['customer_no_hashed', 'transfer_type', 'beneficiary_name_hashed', 'amount', 'createdDateTime']], use_container_width=True)
                     topup_count = df_cust['transfer_type'].astype(str).str.upper().eq('TOP-UP').sum()
                     st.write(f"DEBUG: Number of Top-up transactions for this customer: {topup_count}")
                     if not df_cust.empty:
