@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from io import StringIO
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
-from explainable_reasoner import generate_reason
 from graph_analysis import build_transaction_graph, detect_suspicious_hubs, find_cycles, visualize_graph
 import hashlib
 from graph_rag import build_graph_from_df, extract_graph_context, format_rag_prompt
@@ -125,7 +124,6 @@ with tab2:
                 # Calculate z-score for amount (already scaled in StandardScaler)
                 suspects = df[df['anomaly'] == 1].copy()
                 if not suspects.empty and isinstance(suspects, pd.DataFrame):
-                    suspects['reason'] = suspects.apply(generate_reason, axis=1)
                     suspects['customer_no_hashed'] = suspects['customer_no'].apply(hash_value)
                     suspects['CustomerName_hashed'] = suspects['CustomerName'].apply(hash_value)
                     suspects['beneficiary_name_hashed'] = suspects['beneficiary_name'].apply(hash_value)
@@ -145,7 +143,6 @@ with tab2:
                     customer_summary = suspects.groupby(['customer_no_hashed', 'CustomerName_hashed']).agg(
                         total_flagged_txns = ('amount', 'count'),
                         total_flagged_amount = ('amount', 'sum'),
-                        reasons = ('reason', consolidate_reasons),
                         transfer_types = ('transfer_type', consolidate_types),
                         beneficiaries = ('beneficiary_name_hashed', consolidate_beneficiaries),
                         max_zscore = ('amount_zscore', 'max'),
@@ -160,13 +157,12 @@ with tab2:
                     def make_story(row):
                         story = f"Customer {row['CustomerName_hashed']} (#{row['customer_no_hashed']}) had {row['total_flagged_txns']} flagged transactions totaling {row['total_flagged_amount']}. "
                         story += f"Transfer types: {row['transfer_types']}. Beneficiaries: {row['beneficiaries']}. "
-                        story += f"Reasons: {row['reasons']}. "
                         story += f"Criticality: z-score={row['max_zscore']:.2f}, percentile={row['max_percentile']:.1f}."
                         return story
                     customer_summary['story'] = customer_summary.apply(make_story, axis=1)
 
                     st.subheader("🧑‍💼 Customer-level AML Summary")
-                    st.dataframe(customer_summary[['CustomerName_hashed', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'reasons', 'transfer_types', 'beneficiaries', 'story']], use_container_width=True)
+                    st.dataframe(customer_summary[['CustomerName_hashed', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'story']], use_container_width=True)
                 else:
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.info("No anomalous transactions detected.")
