@@ -42,7 +42,7 @@ cd aml-dashboard
 ./run-docker.sh
 
 # Access the dashboard
-# Open http://localhost:8501 in your browser
+# Open http://localhost:8502 in your browser
 ```
 
 ### Option 2: Local Development
@@ -235,7 +235,7 @@ docker push csingh033/aml-dashboard:latest
 2. **Port Already in Use**
    ```bash
    # Check port usage
-   lsof -i :8501
+   lsof -i :8502
    
    # Stop conflicting applications
    ./stop-docker.sh
@@ -290,4 +290,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **🎉 Ready to detect money laundering patterns with AI-powered insights!**
 
-**Access the dashboard**: `http://localhost:8501` 
+**Access the dashboard**: `http://localhost:8502` 

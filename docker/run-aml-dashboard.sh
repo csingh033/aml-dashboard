@@ -59,13 +59,13 @@ echo -e "${YELLOW}⏳ Waiting for application to start...${NC}"
 sleep 10
 
 # Check if the application is running
-if curl -s http://localhost:8501 > /dev/null; then
+if curl -s http://localhost:8502 > /dev/null; then
     echo ""
     echo -e "${GREEN}🎉 AML Dashboard is now running!${NC}"
     echo ""
     echo -e "${BLUE}📋 Access Information:${NC}"
-    echo "   • Local URL: http://localhost:8501"
-    echo "   • Network URL: http://$(hostname -I | awk '{print $1}'):8501"
+    echo "   • Local URL: http://localhost:8502"
+    echo "   • Network URL: http://$(hostname -I | awk '{print $1}'):8502"
     echo ""
     echo -e "${BLUE}📁 Data Directory:${NC}"
     echo "   • Place your CSV files in the '../data' folder"
@@ -78,7 +78,7 @@ if curl -s http://localhost:8501 > /dev/null; then
     echo ""
     echo -e "${GREEN}✅ Your AML Dashboard is ready to use!${NC}"
     echo ""
-    echo -e "${YELLOW}💡 Tip: Open your web browser and go to http://localhost:8501${NC}"
+    echo -e "${YELLOW}💡 Tip: Open your web browser and go to http://localhost:8502${NC}"
 else
     echo -e "${RED}❌ Application failed to start. Check logs with: docker-compose logs${NC}"
     exit 1
