@@ -315,8 +315,7 @@ with tab3:
             "Enter or select a hashed customer number to investigate:",
             options=customer_options,
             index=None,
-            placeholder="Type or select a hashed customer number...",
-            accept_new_options=True,
+            placeholder="Type or select a hashed customer number..."
         )
         
         if selected_customer:
