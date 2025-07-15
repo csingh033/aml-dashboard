@@ -524,6 +524,8 @@ with tab2:
                                         else:
                                             cycle_with_names.append(node)
                                     st.write(f"{i}. {' → '.join(cycle_with_names)}")
+                            else:
+                                st.write("**✅ No suspicious cycles detected**")
                         else:
                             st.info("Network too small for detailed analysis.")
                 else:
