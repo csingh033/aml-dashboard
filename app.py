@@ -461,22 +461,40 @@ with tab2:
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Add edge details table
-                    st.subheader("📊 Transaction Details")
-                    edge_details = []
-                    for edge in G_cust.edges(data=True):
-                        edge_details.append({
-                            'From': edge[0],
-                            'To': edge[1],
-                            'Amount': edge[2].get('amount', 'N/A'),
-                            'Type': edge[2].get('transfer_type', 'N/A'),
-                            'Date': edge[2].get('created', 'N/A'),
-                            'Reference': edge[2].get('reference_no', 'N/A')
-                        })
+                    # Add network analysis insights
+                    st.subheader("🔍 Network Analysis Insights")
                     
-                    if edge_details:
-                        edge_df = pd.DataFrame(edge_details)
-                        st.dataframe(edge_df, use_container_width=True)
+                    # Calculate network metrics
+                    if len(G_cust.nodes) > 1:
+                        # Node centrality
+                        in_degree = dict(G_cust.in_degree())
+                        out_degree = dict(G_cust.out_degree())
+                        
+                        # Find most connected nodes
+                        most_connected = sorted(out_degree.items(), key=lambda x: x[1], reverse=True)[:3]
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write("**Network Statistics:**")
+                            st.write(f"• Total nodes: {len(G_cust.nodes)}")
+                            st.write(f"• Total edges: {len(G_cust.edges)}")
+                            st.write(f"• Network density: {nx.density(G_cust):.3f}")
+                            
+                        with col2:
+                            st.write("**Most Connected Nodes:**")
+                            for node, degree in most_connected:
+                                if node == customer_input:
+                                    st.write(f"• **{node}** ({degree} connections) - *Selected Customer*")
+                                else:
+                                    st.write(f"• {node} ({degree} connections)")
+                        
+                        # Show cycles if found
+                        if cycles:
+                            st.write("**🔴 Suspicious Cycles Detected:**")
+                            for i, cycle in enumerate(cycles[:3], 1):  # Show first 3 cycles
+                                st.write(f"{i}. {' → '.join(cycle)}")
+                    else:
+                        st.info("Network too small for detailed analysis.")
                 else:
                     st.info("No transactions found for this customer.")
             else:
