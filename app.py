@@ -379,28 +379,52 @@ with tab2:
                     node_color = []
                     node_size = []
                     
+                    # Calculate transaction counts and sums for each node
+                    node_stats = {}
+                    for node in G_cust.nodes():
+                        if node == 'TOP-UP':
+                            # Count TOP-UP transactions
+                            topup_txns = df_cust[df_cust['transfer_type'].str.upper() == 'TOP-UP'].shape[0]
+                            topup_sum = df_cust[df_cust['transfer_type'].str.upper() == 'TOP-UP']['amount'].sum()
+                            node_stats[node] = {'count': topup_txns, 'sum': topup_sum, 'name': 'TOP-UP'}
+                        else:
+                            # Count transactions where this node is sender or receiver
+                            sender_txns = df_cust[df_cust['customer_no_hashed'] == node]
+                            receiver_txns = df_cust[df_cust['beneficiary_name_hashed'] == node]
+                            total_txns = len(sender_txns) + len(receiver_txns)
+                            total_sum = sender_txns['amount'].sum() + receiver_txns['amount'].sum()
+                            
+                            # Get customer name if available
+                            customer_name = 'Unknown'
+                            if node in df_cust['customer_no_hashed'].values:
+                                customer_row = df_cust[df_cust['customer_no_hashed'] == node].iloc[0]
+                                if 'CustomerName' in customer_row and pd.notna(customer_row['CustomerName']):
+                                    customer_name = customer_row['CustomerName']
+                            
+                            node_stats[node] = {'count': total_txns, 'sum': total_sum, 'name': customer_name}
+                    
                     for node in G_cust.nodes():
                         x, y = pos[node]
                         node_x.append(x)
                         node_y.append(y)
                         
-                        # Node label with transaction count
-                        count = all_nodes.get(node, 0)
+                        # Enhanced node label with name, count, and sum
+                        stats = node_stats[node]
                         if node == 'TOP-UP':
-                            node_text.append(f"TOP-UP ({topup_count})")
+                            node_text.append(f"TOP-UP<br>{stats['count']} txns<br>${stats['sum']:,.0f}")
                         else:
-                            node_text.append(f"{node} ({count})")
+                            node_text.append(f"{stats['name']}<br>{stats['count']} txns<br>${stats['sum']:,.0f}")
                         
                         # Color nodes based on type
                         if node == customer_input:
                             node_color.append('red')  # Highlight selected customer
-                            node_size.append(25)
+                            node_size.append(30)
                         elif node == 'TOP-UP':
                             node_color.append('orange')  # TOP-UP node
-                            node_size.append(20)
+                            node_size.append(25)
                         else:
                             node_color.append('lightblue')  # Regular nodes
-                            node_size.append(15)
+                            node_size.append(20)
                     
                     # Create edge traces
                     edge_x = []
@@ -470,7 +494,7 @@ with tab2:
                         in_degree = dict(G_cust.in_degree())
                         out_degree = dict(G_cust.out_degree())
                         
-                        # Find most connected nodes
+                        # Find most connected nodes with enhanced info
                         most_connected = sorted(out_degree.items(), key=lambda x: x[1], reverse=True)[:3]
                         
                         col1, col2 = st.columns(2)
@@ -483,18 +507,25 @@ with tab2:
                         with col2:
                             st.write("**Most Connected Nodes:**")
                             for node, degree in most_connected:
+                                stats = node_stats[node]
                                 if node == customer_input:
-                                    st.write(f"• **{node}** ({degree} connections) - *Selected Customer*")
+                                    st.write(f"• **{stats['name']}** ({degree} connections, {stats['count']} txns, ${stats['sum']:,.0f}) - *Selected*")
                                 else:
-                                    st.write(f"• {node} ({degree} connections)")
-                        
-                        # Show cycles if found
-                        if cycles:
-                            st.write("**🔴 Suspicious Cycles Detected:**")
-                            for i, cycle in enumerate(cycles[:3], 1):  # Show first 3 cycles
-                                st.write(f"{i}. {' → '.join(cycle)}")
-                    else:
-                        st.info("Network too small for detailed analysis.")
+                                    st.write(f"• {stats['name']} ({degree} connections, {stats['count']} txns, ${stats['sum']:,.0f})")
+                            
+                            # Show cycles if found
+                            if cycles:
+                                st.write("**🔴 Suspicious Cycles Detected:**")
+                                for i, cycle in enumerate(cycles[:3], 1):  # Show first 3 cycles
+                                    cycle_with_names = []
+                                    for node in cycle:
+                                        if node in node_stats:
+                                            cycle_with_names.append(node_stats[node]['name'])
+                                        else:
+                                            cycle_with_names.append(node)
+                                    st.write(f"{i}. {' → '.join(cycle_with_names)}")
+                        else:
+                            st.info("Network too small for detailed analysis.")
                 else:
                     st.info("No transactions found for this customer.")
             else:
