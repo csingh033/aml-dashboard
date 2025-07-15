@@ -100,33 +100,39 @@ with tab2:
     if uploaded_file is not None:
         try:
             uploaded_file.seek(0)
-            content = uploaded_file.read()
-            if not content:
-                st.info("The uploaded file is empty. Please upload a valid CSV file in the EDA tab.")
-            else:
-                uploaded_file.seek(0)
-                df = pd.read_csv(uploaded_file)
-                st.write('DEBUG: Columns in uploaded file:', list(df.columns))
-
-                # Check if required columns exist
-                required_columns = ['customer_no']
-                missing_columns = [col for col in required_columns if col not in df.columns]
+            df = pd.read_csv(uploaded_file)
+            st.write('DEBUG: Columns in uploaded file:', list(df.columns))
+            
+            # Check if required columns exist
+            required_columns = ['customer_no', 'amount', 'transfer_type', 'createdDateTime']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                st.info("""
+                **Required CSV format:**
+                Your CSV file must contain at least the following columns:
+                - `customer_no`: Customer identification number
+                - `amount`: Transaction amount
+                - `transfer_type`: Type of transfer
+                - `createdDateTime`: Transaction timestamp
                 
-                if missing_columns:
-                    st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
-                    st.info("""
-                    **Required CSV format:**
-                    Your CSV file must contain at least the following columns:
-                    - `customer_no`: Customer identification number
-                    
-                    **Optional columns:**
-                    - `CustomerName`: Customer name
-                    - `beneficiary_name`: Beneficiary name
-                    - `amount`: Transaction amount
-                    - `transfer_type`: Type of transfer
-                    - `createdDateTime`: Transaction timestamp
-                    """)
-                    st.stop()
+                **Optional columns:**
+                - `CustomerName`: Customer name
+                - `beneficiary_name`: Beneficiary name
+                - `reference_no`: Transaction reference number
+                """)
+                st.stop()
+            
+            # Check if optional columns exist and create placeholders if missing
+            if 'reference_no' not in df.columns:
+                df['reference_no'] = range(len(df))  # Create sequential reference numbers
+            
+            if 'CustomerName' not in df.columns:
+                df['CustomerName'] = 'Unknown'
+            
+            if 'beneficiary_name' not in df.columns:
+                df['beneficiary_name'] = 'Unknown'
                 
                 # Hash customer name and number for privacy
                 df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
