@@ -101,7 +101,6 @@ with tab2:
         try:
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file)
-            st.write('DEBUG: Columns in uploaded file:', list(df.columns))
             
             # Check if required columns exist
             required_columns = ['customer_no', 'amount', 'transfer_type', 'createdDateTime']
@@ -133,23 +132,23 @@ with tab2:
             
             if 'beneficiary_name' not in df.columns:
                 df['beneficiary_name'] = 'Unknown'
-                
-                # Hash customer name and number for privacy
-                df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
-                
-                # Check if CustomerName column exists, if not create a placeholder
-                if 'CustomerName' in df.columns:
-                    df['CustomerName_hashed'] = df['CustomerName'].apply(hash_value)
-                else:
-                    df['CustomerName'] = 'Unknown'
-                    df['CustomerName_hashed'] = 'Unknown'
-                
-                # Check if beneficiary_name column exists, if not create a placeholder
-                if 'beneficiary_name' in df.columns:
-                    df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
-                else:
-                    df['beneficiary_name'] = 'Unknown'
-                    df['beneficiary_name_hashed'] = 'Unknown'
+            
+            # Hash customer name and number for privacy
+            df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
+            
+            # Check if CustomerName column exists, if not create a placeholder
+            if 'CustomerName' in df.columns:
+                df['CustomerName_hashed'] = df['CustomerName'].apply(hash_value)
+            else:
+                df['CustomerName'] = 'Unknown'
+                df['CustomerName_hashed'] = 'Unknown'
+            
+            # Check if beneficiary_name column exists, if not create a placeholder
+            if 'beneficiary_name' in df.columns:
+                df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
+            else:
+                df['beneficiary_name'] = 'Unknown'
+                df['beneficiary_name_hashed'] = 'Unknown'
 
                 # Preprocessing
                 df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
