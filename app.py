@@ -565,8 +565,8 @@ with tab3:
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file)
         # Hash customer numbers for privacy
-        df['customer_no_hashed'] = df['customer_no']
-        df['beneficiary_name_hashed'] = df['beneficiary_name']
+        df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
+        df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
         df['transfer_type_hashed'] = df['transfer_type']
         
         # Check if CustomerName column exists and create hashed version
@@ -579,10 +579,10 @@ with tab3:
         # Customer search input
         customer_options = sorted(df['customer_no_hashed'].unique())
         selected_customer = st.selectbox(
-            "Enter or select a customer number to investigate:",
+            "Enter or select a hashed customer number to investigate:",
             options=customer_options,
             index=None,
-            placeholder="Type or select a customer number..."
+            placeholder="Type or select a hashed customer number..."
         )
         
         if selected_customer:
