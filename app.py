@@ -191,8 +191,8 @@ with tab2:
 
                 # --- Customer-centric Transaction Network Graph ---
                 st.subheader("🔎 Customer Transaction Network Explorer")
-                st.markdown("Enter a hashed customer number below to view only their transaction network and any cycles they are involved in. This will help you focus on individual customer behavior and connections.")
-                customer_input = st.text_input("Enter a hashed customer number to view their transaction network and cycles:")
+                st.markdown("Enter a customer number below to view only their transaction network and any cycles they are involved in. This will help you focus on individual customer behavior and connections.")
+                customer_input = st.text_input("Enter a customer number to view their transaction network and cycles:")
                 if customer_input:
                     # Filter transactions where the hashed customer is sender or receiver
                     cust_mask = (df['customer_no_hashed'] == customer_input) | (df['beneficiary_name_hashed'] == customer_input)
@@ -392,7 +392,7 @@ with tab2:
                     else:
                         st.info("No transactions found for this customer.")
                 else:
-                    st.info("Enter a hashed customer number above to explore their transaction network.")
+                    st.info("Enter a customer number above to explore their transaction network.")
         except Exception as e:
             st.error(f"Error reading the uploaded file: {e}")
     else:
@@ -430,10 +430,10 @@ with tab3:
         # Customer search input
         customer_options = sorted(df['customer_no_hashed'].unique())
         selected_customer = st.selectbox(
-            "Enter or select a hashed customer number to investigate:",
+            "Enter or select a customer number to investigate:",
             options=customer_options,
             index=None,
-            placeholder="Type or select a hashed customer number..."
+            placeholder="Type or select a customer number..."
         )
         
         if selected_customer:
