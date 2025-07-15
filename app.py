@@ -133,6 +133,27 @@ with tab2:
                     suspects['amount_zscore'] = pd.Series(scaler.transform(suspects_features)[:, 0], index=suspects.index)
                     suspects['amount_percentile'] = pd.Series(suspects['amount']).rank(pct=True) * 100
 
+                    # Generate reasons for flagged transactions
+                    def generate_reason(row):
+                        reasons = []
+                        if row['amount'] > df['amount'].quantile(0.95):
+                            reasons.append("High amount")
+                        if row['is_international'] == 1:
+                            reasons.append("International transfer")
+                        if row['has_beneficiary'] == 0:
+                            reasons.append("No beneficiary")
+                        if row['transaction_count'] > df['transaction_count'].quantile(0.95):
+                            reasons.append("High transaction frequency")
+                        if row['unique_beneficiaries'] > df['unique_beneficiaries'].quantile(0.95):
+                            reasons.append("Multiple beneficiaries")
+                        if row['hour'] < 6 or row['hour'] > 22:
+                            reasons.append("Unusual timing")
+                        if not reasons:
+                            reasons.append("Anomalous pattern")
+                        return " | ".join(reasons)
+                    
+                    suspects['reason'] = suspects.apply(generate_reason, axis=1)
+
                     def consolidate_reasons(reasons):
                         return ' | '.join(sorted(set(reasons)))
                     def consolidate_types(types):
