@@ -42,37 +42,53 @@ with tab1:
         st.session_state['uploaded_file'] = uploaded_file
         try:
             uploaded_file.seek(0)
-            content = uploaded_file.read()
-            if not content:
-                st.info("The uploaded file is empty. Please upload a valid CSV file.")
-            else:
-                uploaded_file.seek(0)
-                df = pd.read_csv(uploaded_file)
-                df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
-                df['date'] = df['createdDateTime'].dt.date
-                df['customer_no_hashed'] = df['customer_no']
-                # 1. Day-wise count of transactions by transfer type
-                count_df = df.groupby(['date', 'transfer_type']).size().reset_index()
-                count_df = count_df.rename(columns={0: 'txn_count'})
-                # 2. Day-wise sum of transactions by transfer type
-                sum_df = df.groupby(['date', 'transfer_type'])['amount'].sum().reset_index()
-                sum_df = sum_df.rename(columns={'amount': 'txn_sum'})
-                # 3. Day-wise number of unique users by transfer type (as sender)
-                user_df = df.groupby(['date', 'transfer_type'])['customer_no_hashed'].nunique().reset_index()
-                user_df = user_df.rename(columns={'customer_no_hashed': 'unique_users'})
-                import plotly.express as px
-                st.subheader("Day-wise Count of Transactions by Transfer Type")
-                fig1 = px.line(count_df, x='date', y='txn_count', color='transfer_type', markers=True, render_mode='svg')
-                fig1.update_traces(mode='lines+markers')
-                st.plotly_chart(fig1, use_container_width=True)
-                st.subheader("Day-wise Sum of Transactions by Transfer Type")
-                fig2 = px.line(sum_df, x='date', y='txn_sum', color='transfer_type', markers=True, render_mode='svg')
-                fig2.update_traces(mode='lines+markers')
-                st.plotly_chart(fig2, use_container_width=True)
-                st.subheader("Day-wise Number of Unique Users by Transfer Type")
-                fig3 = px.line(user_df, x='date', y='unique_users', color='transfer_type', markers=True, render_mode='svg')
-                fig3.update_traces(mode='lines+markers')
-                st.plotly_chart(fig3, use_container_width=True)
+            df = pd.read_csv(uploaded_file)
+            
+            # Check if required columns exist for EDA
+            required_columns = ['customer_no']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                st.info("""
+                **Required CSV format:**
+                Your CSV file must contain at least the following columns:
+                - `customer_no`: Customer identification number
+                
+                **Optional columns:**
+                - `CustomerName`: Customer name
+                - `beneficiary_name`: Beneficiary name
+                - `amount`: Transaction amount
+                - `transfer_type`: Type of transfer
+                - `createdDateTime`: Transaction timestamp
+                """)
+                st.stop()
+            
+            df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
+            df['date'] = df['createdDateTime'].dt.date
+            df['customer_no_hashed'] = df['customer_no']
+            # 1. Day-wise count of transactions by transfer type
+            count_df = df.groupby(['date', 'transfer_type']).size().reset_index()
+            count_df = count_df.rename(columns={0: 'txn_count'})
+            # 2. Day-wise sum of transactions by transfer type
+            sum_df = df.groupby(['date', 'transfer_type'])['amount'].sum().reset_index()
+            sum_df = sum_df.rename(columns={'amount': 'txn_sum'})
+            # 3. Day-wise number of unique users by transfer type (as sender)
+            user_df = df.groupby(['date', 'transfer_type'])['customer_no_hashed'].nunique().reset_index()
+            user_df = user_df.rename(columns={'customer_no_hashed': 'unique_users'})
+            import plotly.express as px
+            st.subheader("Day-wise Count of Transactions by Transfer Type")
+            fig1 = px.line(count_df, x='date', y='txn_count', color='transfer_type', markers=True, render_mode='svg')
+            fig1.update_traces(mode='lines+markers')
+            st.plotly_chart(fig1, use_container_width=True)
+            st.subheader("Day-wise Sum of Transactions by Transfer Type")
+            fig2 = px.line(sum_df, x='date', y='txn_sum', color='transfer_type', markers=True, render_mode='svg')
+            fig2.update_traces(mode='lines+markers')
+            st.plotly_chart(fig2, use_container_width=True)
+            st.subheader("Day-wise Number of Unique Users by Transfer Type")
+            fig3 = px.line(user_df, x='date', y='unique_users', color='transfer_type', markers=True, render_mode='svg')
+            fig3.update_traces(mode='lines+markers')
+            st.plotly_chart(fig3, use_container_width=True)
         except Exception as e:
             st.error(f"Error reading the uploaded file: {e}")
     else:
@@ -91,6 +107,26 @@ with tab2:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file)
 
+                # Check if required columns exist
+                required_columns = ['customer_no']
+                missing_columns = [col for col in required_columns if col not in df.columns]
+                
+                if missing_columns:
+                    st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                    st.info("""
+                    **Required CSV format:**
+                    Your CSV file must contain at least the following columns:
+                    - `customer_no`: Customer identification number
+                    
+                    **Optional columns:**
+                    - `CustomerName`: Customer name
+                    - `beneficiary_name`: Beneficiary name
+                    - `amount`: Transaction amount
+                    - `transfer_type`: Type of transfer
+                    - `createdDateTime`: Transaction timestamp
+                    """)
+                    st.stop()
+                
                 # Hash customer name and number for privacy
                 df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
                 
