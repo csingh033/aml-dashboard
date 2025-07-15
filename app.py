@@ -102,6 +102,9 @@ with tab2:
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file)
             
+            st.write("✅ CSV file loaded successfully")
+            st.write(f"📊 Data shape: {df.shape}")
+            
             # Check if required columns exist
             required_columns = ['customer_no', 'amount', 'transfer_type', 'createdDateTime']
             missing_columns = [col for col in required_columns if col not in df.columns]
@@ -123,15 +126,22 @@ with tab2:
                 """)
                 st.stop()
             
+            st.write("✅ All required columns present")
+            
             # Check if optional columns exist and create placeholders if missing
             if 'reference_no' not in df.columns:
                 df['reference_no'] = range(len(df))  # Create sequential reference numbers
+                st.write("⚠️ Created reference_no column")
             
             if 'CustomerName' not in df.columns:
                 df['CustomerName'] = 'Unknown'
+                st.write("⚠️ Created CustomerName column")
             
             if 'beneficiary_name' not in df.columns:
                 df['beneficiary_name'] = 'Unknown'
+                st.write("⚠️ Created beneficiary_name column")
+            
+            st.write("✅ Data preprocessing completed")
             
             # Hash customer name and number for privacy
             df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
@@ -150,33 +160,43 @@ with tab2:
                 df['beneficiary_name'] = 'Unknown'
                 df['beneficiary_name_hashed'] = 'Unknown'
 
-                # Preprocessing
-                df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
-                df['hour'] = df['createdDateTime'].dt.hour
-                df['day_of_week'] = df['createdDateTime'].dt.dayofweek
-                df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
-                df['amount'] = df['amount'].fillna(0)
-                df['is_international'] = df['transfer_type'].apply(lambda x: 1 if x == 'INTERNATIONAL_PAYMENT' else 0)
-                df['has_beneficiary'] = df['beneficiary_name'].notna().astype(int)
-                df['transaction_count'] = df.groupby('customer_no')['reference_no'].transform('count')
-                df['unique_beneficiaries'] = df.groupby('customer_no')['beneficiary_name'].transform('nunique')
-                df['date'] = df['createdDateTime'].dt.date
+            st.write("✅ Data hashing completed")
 
-                # --- Anomaly Detection (Moved before suspects filtering) ---
-                features = df[['amount', 'hour', 'day_of_week', 'is_international', 
-                               'has_beneficiary', 'transaction_count', 'unique_beneficiaries']]
+            # Preprocessing
+            df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
+            df['hour'] = df['createdDateTime'].dt.hour
+            df['day_of_week'] = df['createdDateTime'].dt.dayofweek
+            df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
+            df['amount'] = df['amount'].fillna(0)
+            df['is_international'] = df['transfer_type'].apply(lambda x: 1 if x == 'INTERNATIONAL_PAYMENT' else 0)
+            df['has_beneficiary'] = df['beneficiary_name'].notna().astype(int)
+            df['transaction_count'] = df.groupby('customer_no')['reference_no'].transform('count')
+            df['unique_beneficiaries'] = df.groupby('customer_no')['beneficiary_name'].transform('nunique')
+            df['date'] = df['createdDateTime'].dt.date
 
-                scaler = StandardScaler()
-                scaled = scaler.fit_transform(features)
+            st.write("✅ Feature engineering completed")
 
-                # Anomaly Detection
-                model = IsolationForest(contamination=0.01, random_state=42)
-                df['anomaly'] = model.fit_predict(scaled)
-                df['anomaly'] = df['anomaly'].apply(lambda x: 1 if x == -1 else 0)
+            # --- Anomaly Detection (Moved before suspects filtering) ---
+            features = df[['amount', 'hour', 'day_of_week', 'is_international', 
+                           'has_beneficiary', 'transaction_count', 'unique_beneficiaries']]
 
-                # --- Customer-level summary ---
-                # Calculate z-score for amount (already scaled in StandardScaler)
-                suspects = df[df['anomaly'] == 1].copy()
+            scaler = StandardScaler()
+            scaled = scaler.fit_transform(features)
+
+            # Anomaly Detection
+            model = IsolationForest(contamination=0.01, random_state=42)
+            df['anomaly'] = model.fit_predict(scaled)
+            df['anomaly'] = df['anomaly'].apply(lambda x: 1 if x == -1 else 0)
+
+            st.write("✅ Anomaly detection completed")
+            st.write(f"🚨 Found {df['anomaly'].sum()} anomalous transactions out of {len(df)} total")
+
+            # --- Customer-level summary ---
+            # Calculate z-score for amount (already scaled in StandardScaler)
+            suspects = df[df['anomaly'] == 1].copy()
+            st.write(f"🔍 Processing {len(suspects)} suspicious transactions...")
+            
+            try:
                 if not suspects.empty and isinstance(suspects, pd.DataFrame):
                     suspects['customer_no_hashed'] = suspects['customer_no'].apply(hash_value)
                     
@@ -194,10 +214,14 @@ with tab2:
                         suspects['beneficiary_name'] = 'Unknown'
                         suspects['beneficiary_name_hashed'] = 'Unknown'
 
+                    st.write("✅ Suspects data prepared")
+
                     # Calculate z-score for amount (already scaled in StandardScaler)
                     suspects_features = suspects[['amount', 'hour', 'day_of_week', 'is_international', 'has_beneficiary', 'transaction_count', 'unique_beneficiaries']]
                     suspects['amount_zscore'] = pd.Series(scaler.transform(suspects_features)[:, 0], index=suspects.index)
                     suspects['amount_percentile'] = pd.Series(suspects['amount']).rank(pct=True) * 100
+
+                    st.write("✅ Z-scores calculated")
 
                     # Generate reasons for flagged transactions
                     def generate_reason(row):
@@ -220,6 +244,8 @@ with tab2:
                     
                     suspects['reason'] = suspects.apply(generate_reason, axis=1)
 
+                    st.write("✅ Reasons generated")
+
                     def consolidate_reasons(reasons):
                         return ' | '.join(sorted(set(reasons)))
                     def consolidate_types(types):
@@ -236,6 +262,8 @@ with tab2:
                         max_zscore = ('amount_zscore', 'max'),
                         max_percentile = ('amount_percentile', 'max')
                     ).reset_index()
+
+                    st.write("✅ Customer summary created")
 
                     # Add total transactions for each customer
                     total_txns_by_customer = df.groupby('customer_no_hashed')['reference_no'].count().reset_index()
@@ -257,223 +285,233 @@ with tab2:
                     
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.dataframe(customer_summary[summary_display_columns], use_container_width=True)
+                    st.write("✅ Customer summary displayed successfully")
+                    
                 else:
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.info("No anomalous transactions detected.")
-
-                # --- Customer-centric Transaction Network Graph ---
-                st.subheader("🔎 Customer Transaction Network Explorer")
-                st.markdown("Enter a customer number below to view only their transaction network and any cycles they are involved in. This will help you focus on individual customer behavior and connections.")
-                customer_input = st.text_input("Enter a customer number to view their transaction network and cycles:")
-                if customer_input:
-                    # Filter transactions where the hashed customer is sender or receiver
-                    cust_mask = (df['customer_no_hashed'] == customer_input) | (df['beneficiary_name_hashed'] == customer_input)
-                    df_cust = df[cust_mask].copy()  # ensure DataFrame
-                    st.write(f"DEBUG: Number of transactions in df_cust for this customer: {len(df_cust)}")
-                    # Create a list of columns to display, checking if they exist
-                    display_columns = ['customer_no', 'customer_no_hashed']
-                    if 'CustomerName' in df_cust.columns:
-                        display_columns.extend(['CustomerName', 'CustomerName_hashed'])
-                    display_columns.extend(['transfer_type'])
-                    if 'beneficiary_name' in df_cust.columns:
-                        display_columns.extend(['beneficiary_name', 'beneficiary_name_hashed'])
-                    display_columns.extend(['amount', 'createdDateTime'])
                     
-                    st.dataframe(df_cust[display_columns], use_container_width=True)
-                    topup_count = df_cust['transfer_type'].astype(str).str.upper().eq('TOP-UP').sum()
-                    st.write(f"DEBUG: Number of Top-up transactions for this customer: {topup_count}")
-                    if not df_cust.empty:
-                        # Build graph using hashed values (all transactions where customer is sender or receiver)
-                        def build_hashed_graph(df):
-                            G = nx.DiGraph()
-                            for _, row in df.iterrows():
-                                sender = row['customer_no_hashed']
-                                receiver = row['beneficiary_name_hashed']
-                                # If beneficiary is missing and transfer_type is Top-up, use 'TOP-UP' node
-                                if (pd.isna(receiver) or receiver == '') and str(row.get('transfer_type', '')).upper() == 'TOP-UP':
-                                    receiver = 'TOP-UP'
-                                if pd.isna(receiver) or receiver == '':
-                                    continue
-                                G.add_node(sender, type='customer')
-                                G.add_node(receiver, type='beneficiary')
-                                G.add_edge(sender, receiver, amount=row['amount'], transfer_type=row['transfer_type'], created=row['createdDateTime'], reference_no=row['reference_no'])
-                            return G
-                        G_cust = build_hashed_graph(df_cust)
-                        # Highlight the customer node
-                        if customer_input in G_cust.nodes:
-                            hubs = [customer_input]
-                        else:
-                            hubs = []
-                        # Calculate total transactions for each node (sender or receiver) using a flattened Series from df_cust
-                        all_nodes = pd.concat([
-                            pd.Series(df_cust['customer_no_hashed']),
-                            pd.Series(df_cust['beneficiary_name_hashed'])
-                        ]).value_counts()
-                        # Special handling for TOP-UP node: count edges to 'TOP-UP'
-                        topup_count = df_cust[df_cust['transfer_type'].str.upper() == 'TOP-UP'].shape[0]
-                        def node_label(node):
-                            if node == 'TOP-UP':
-                                # Count edges where receiver is 'TOP-UP' in df_cust
-                                topup_count = sum(
-                                    (pd.isna(row['beneficiary_name_hashed']) or row['beneficiary_name_hashed'] == '') and
-                                    str(row.get('transfer_type', '')).upper() == 'TOP-UP'
-                                    for _, row in df_cust.iterrows()
-                                )
-                                return f"TOP-UP ({topup_count})"
-                            count = all_nodes.get(node, 0)
-                            return f"{node} ({count})"
-                        # Build label mapping for networkx
-                        labels = {n: node_label(n) for n in G_cust.nodes}
-                        # --- Pie chart for transaction type distribution ---
-                        import plotly.express as px
-                        type_counts = pd.Series(df_cust['transfer_type']).value_counts()
-                        type_sums = df_cust.groupby('transfer_type')['amount'].sum()
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            fig_pie_counts = px.pie(type_counts, values=type_counts.values, names=type_counts.index, title='Transaction Count by Type')
-                            st.plotly_chart(fig_pie_counts, use_container_width=True)
-                        
-                        with col2:
-                            fig_pie_sums = px.pie(type_sums, values=type_sums.values, names=type_sums.index, title='Transaction Sum by Type')
-                            st.plotly_chart(fig_pie_sums, use_container_width=True)
-                        # --- Timeline histogram for transaction types (amount over time, day-wise) ---
-                        df_cust['date'] = pd.to_datetime(df_cust['createdDateTime']).dt.date
-                        agg = df_cust.groupby(['date', 'transfer_type']).agg(
-                            sum_amount=('amount', 'sum'),
-                            count=('amount', 'count')
-                        ).reset_index()
-                        import plotly.express as px
-                        fig_hist = px.bar(
-                            agg,
-                            x='date',
-                            y='sum_amount',
-                            color='transfer_type',
-                            barmode='stack',
-                            title='Daily Transaction Sums and Counts by Type',
-                            labels={'date': 'Date', 'sum_amount': 'Sum of Amount'},
-                            hover_data={'count': True, 'sum_amount': True, 'transfer_type': True}
-                        )
-                        st.plotly_chart(fig_hist, use_container_width=True)
-                        # --- Improved cycle detection: run on the full customer subgraph ---
-                        cycles = find_cycles(G_cust)
-                        st.markdown(f"**Cycles involving this customer:** {cycles if cycles else 'None found'}")
-                        
-                        # Create interactive network graph using Plotly
-                        import plotly.graph_objects as go
-                        
-                        # Prepare node positions using spring layout
-                        pos = nx.spring_layout(G_cust, seed=42)
-                        
-                        # Create node traces
-                        node_x = []
-                        node_y = []
-                        node_text = []
-                        node_color = []
-                        node_size = []
-                        
-                        for node in G_cust.nodes():
-                            x, y = pos[node]
-                            node_x.append(x)
-                            node_y.append(y)
-                            
-                            # Node label with transaction count
-                            count = all_nodes.get(node, 0)
-                            if node == 'TOP-UP':
-                                node_text.append(f"TOP-UP ({topup_count})")
-                            else:
-                                node_text.append(f"{node} ({count})")
-                            
-                            # Color nodes based on type
-                            if node == customer_input:
-                                node_color.append('red')  # Highlight selected customer
-                                node_size.append(25)
-                            elif node == 'TOP-UP':
-                                node_color.append('orange')  # TOP-UP node
-                                node_size.append(20)
-                            else:
-                                node_color.append('lightblue')  # Regular nodes
-                                node_size.append(15)
-                        
-                        # Create edge traces
-                        edge_x = []
-                        edge_y = []
-                        edge_text = []
-                        
-                        for edge in G_cust.edges(data=True):
-                            x0, y0 = pos[edge[0]]
-                            x1, y1 = pos[edge[1]]
-                            edge_x.extend([x0, x1, None])
-                            edge_y.extend([y0, y1, None])
-                            
-                            # Edge hover text
-                            amount = edge[2].get('amount', 'N/A')
-                            transfer_type = edge[2].get('transfer_type', 'N/A')
-                            edge_text.append(f"Amount: {amount}<br>Type: {transfer_type}")
-                        
-                        # Create the network graph
-                        fig = go.Figure()
-                        
-                        # Add edges
-                        fig.add_trace(go.Scatter(
-                            x=edge_x, y=edge_y,
-                            mode='lines',
-                            line=dict(width=1, color='gray'),
-                            hoverinfo='none',
-                            showlegend=False
-                        ))
-                        
-                        # Add nodes
-                        fig.add_trace(go.Scatter(
-                            x=node_x, y=node_y,
-                            mode='markers+text',
-                            marker=dict(
-                                size=node_size,
-                                color=node_color,
-                                line=dict(width=2, color='white')
-                            ),
-                            text=node_text,
-                            textposition="middle center",
-                            textfont=dict(size=8),
-                            hoverinfo='text',
-                            hovertext=node_text,
-                            showlegend=False
-                        ))
-                        
-                        # Update layout for better interactivity
-                        fig.update_layout(
-                            title=f"Transaction Network for Customer {customer_input}",
-                            showlegend=False,
-                            hovermode='closest',
-                            margin=dict(b=20, l=5, r=5, t=40),
-                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                            plot_bgcolor='white',
-                            height=600
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Add edge details table
-                        st.subheader("📊 Transaction Details")
-                        edge_details = []
-                        for edge in G_cust.edges(data=True):
-                            edge_details.append({
-                                'From': edge[0],
-                                'To': edge[1],
-                                'Amount': edge[2].get('amount', 'N/A'),
-                                'Type': edge[2].get('transfer_type', 'N/A'),
-                                'Date': edge[2].get('created', 'N/A'),
-                                'Reference': edge[2].get('reference_no', 'N/A')
-                            })
-                        
-                        if edge_details:
-                            edge_df = pd.DataFrame(edge_details)
-                            st.dataframe(edge_df, use_container_width=True)
+            except Exception as e:
+                st.error(f"❌ Error in customer summary processing: {str(e)}")
+                st.write("Debug info:")
+                st.write(f"Suspects shape: {suspects.shape if hasattr(suspects, 'shape') else 'N/A'}")
+                st.write(f"Suspects columns: {list(suspects.columns) if hasattr(suspects, 'columns') else 'N/A'}")
+                import traceback
+                st.code(traceback.format_exc())
+
+            # --- Customer-centric Transaction Network Graph ---
+            st.subheader("🔎 Customer Transaction Network Explorer")
+            st.markdown("Enter a customer number below to view only their transaction network and any cycles they are involved in. This will help you focus on individual customer behavior and connections.")
+            customer_input = st.text_input("Enter a customer number to view their transaction network and cycles:")
+            if customer_input:
+                # Filter transactions where the hashed customer is sender or receiver
+                cust_mask = (df['customer_no_hashed'] == customer_input) | (df['beneficiary_name_hashed'] == customer_input)
+                df_cust = df[cust_mask].copy()  # ensure DataFrame
+                st.write(f"DEBUG: Number of transactions in df_cust for this customer: {len(df_cust)}")
+                # Create a list of columns to display, checking if they exist
+                display_columns = ['customer_no', 'customer_no_hashed']
+                if 'CustomerName' in df_cust.columns:
+                    display_columns.extend(['CustomerName', 'CustomerName_hashed'])
+                display_columns.extend(['transfer_type'])
+                if 'beneficiary_name' in df_cust.columns:
+                    display_columns.extend(['beneficiary_name', 'beneficiary_name_hashed'])
+                display_columns.extend(['amount', 'createdDateTime'])
+                
+                st.dataframe(df_cust[display_columns], use_container_width=True)
+                topup_count = df_cust['transfer_type'].astype(str).str.upper().eq('TOP-UP').sum()
+                st.write(f"DEBUG: Number of Top-up transactions for this customer: {topup_count}")
+                if not df_cust.empty:
+                    # Build graph using hashed values (all transactions where customer is sender or receiver)
+                    def build_hashed_graph(df):
+                        G = nx.DiGraph()
+                        for _, row in df.iterrows():
+                            sender = row['customer_no_hashed']
+                            receiver = row['beneficiary_name_hashed']
+                            # If beneficiary is missing and transfer_type is Top-up, use 'TOP-UP' node
+                            if (pd.isna(receiver) or receiver == '') and str(row.get('transfer_type', '')).upper() == 'TOP-UP':
+                                receiver = 'TOP-UP'
+                            if pd.isna(receiver) or receiver == '':
+                                continue
+                            G.add_node(sender, type='customer')
+                            G.add_node(receiver, type='beneficiary')
+                            G.add_edge(sender, receiver, amount=row['amount'], transfer_type=row['transfer_type'], created=row['createdDateTime'], reference_no=row['reference_no'])
+                        return G
+                    G_cust = build_hashed_graph(df_cust)
+                    # Highlight the customer node
+                    if customer_input in G_cust.nodes:
+                        hubs = [customer_input]
                     else:
-                        st.info("No transactions found for this customer.")
+                        hubs = []
+                    # Calculate total transactions for each node (sender or receiver) using a flattened Series from df_cust
+                    all_nodes = pd.concat([
+                        pd.Series(df_cust['customer_no_hashed']),
+                        pd.Series(df_cust['beneficiary_name_hashed'])
+                    ]).value_counts()
+                    # Special handling for TOP-UP node: count edges to 'TOP-UP'
+                    topup_count = df_cust[df_cust['transfer_type'].str.upper() == 'TOP-UP'].shape[0]
+                    def node_label(node):
+                        if node == 'TOP-UP':
+                            # Count edges where receiver is 'TOP-UP' in df_cust
+                            topup_count = sum(
+                                (pd.isna(row['beneficiary_name_hashed']) or row['beneficiary_name_hashed'] == '') and
+                                str(row.get('transfer_type', '')).upper() == 'TOP-UP'
+                                for _, row in df_cust.iterrows()
+                            )
+                            return f"TOP-UP ({topup_count})"
+                        count = all_nodes.get(node, 0)
+                        return f"{node} ({count})"
+                    # Build label mapping for networkx
+                    labels = {n: node_label(n) for n in G_cust.nodes}
+                    # --- Pie chart for transaction type distribution ---
+                    import plotly.express as px
+                    type_counts = pd.Series(df_cust['transfer_type']).value_counts()
+                    type_sums = df_cust.groupby('transfer_type')['amount'].sum()
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        fig_pie_counts = px.pie(type_counts, values=type_counts.values, names=type_counts.index, title='Transaction Count by Type')
+                        st.plotly_chart(fig_pie_counts, use_container_width=True)
+                    
+                    with col2:
+                        fig_pie_sums = px.pie(type_sums, values=type_sums.values, names=type_sums.index, title='Transaction Sum by Type')
+                        st.plotly_chart(fig_pie_sums, use_container_width=True)
+                    # --- Timeline histogram for transaction types (amount over time, day-wise) ---
+                    df_cust['date'] = pd.to_datetime(df_cust['createdDateTime']).dt.date
+                    agg = df_cust.groupby(['date', 'transfer_type']).agg(
+                        sum_amount=('amount', 'sum'),
+                        count=('amount', 'count')
+                    ).reset_index()
+                    import plotly.express as px
+                    fig_hist = px.bar(
+                        agg,
+                        x='date',
+                        y='sum_amount',
+                        color='transfer_type',
+                        barmode='stack',
+                        title='Daily Transaction Sums and Counts by Type',
+                        labels={'date': 'Date', 'sum_amount': 'Sum of Amount'},
+                        hover_data={'count': True, 'sum_amount': True, 'transfer_type': True}
+                    )
+                    st.plotly_chart(fig_hist, use_container_width=True)
+                    # --- Improved cycle detection: run on the full customer subgraph ---
+                    cycles = find_cycles(G_cust)
+                    st.markdown(f"**Cycles involving this customer:** {cycles if cycles else 'None found'}")
+                    
+                    # Create interactive network graph using Plotly
+                    import plotly.graph_objects as go
+                    
+                    # Prepare node positions using spring layout
+                    pos = nx.spring_layout(G_cust, seed=42)
+                    
+                    # Create node traces
+                    node_x = []
+                    node_y = []
+                    node_text = []
+                    node_color = []
+                    node_size = []
+                    
+                    for node in G_cust.nodes():
+                        x, y = pos[node]
+                        node_x.append(x)
+                        node_y.append(y)
+                        
+                        # Node label with transaction count
+                        count = all_nodes.get(node, 0)
+                        if node == 'TOP-UP':
+                            node_text.append(f"TOP-UP ({topup_count})")
+                        else:
+                            node_text.append(f"{node} ({count})")
+                        
+                        # Color nodes based on type
+                        if node == customer_input:
+                            node_color.append('red')  # Highlight selected customer
+                            node_size.append(25)
+                        elif node == 'TOP-UP':
+                            node_color.append('orange')  # TOP-UP node
+                            node_size.append(20)
+                        else:
+                            node_color.append('lightblue')  # Regular nodes
+                            node_size.append(15)
+                    
+                    # Create edge traces
+                    edge_x = []
+                    edge_y = []
+                    edge_text = []
+                    
+                    for edge in G_cust.edges(data=True):
+                        x0, y0 = pos[edge[0]]
+                        x1, y1 = pos[edge[1]]
+                        edge_x.extend([x0, x1, None])
+                        edge_y.extend([y0, y1, None])
+                        
+                        # Edge hover text
+                        amount = edge[2].get('amount', 'N/A')
+                        transfer_type = edge[2].get('transfer_type', 'N/A')
+                        edge_text.append(f"Amount: {amount}<br>Type: {transfer_type}")
+                    
+                    # Create the network graph
+                    fig = go.Figure()
+                    
+                    # Add edges
+                    fig.add_trace(go.Scatter(
+                        x=edge_x, y=edge_y,
+                        mode='lines',
+                        line=dict(width=1, color='gray'),
+                        hoverinfo='none',
+                        showlegend=False
+                    ))
+                    
+                    # Add nodes
+                    fig.add_trace(go.Scatter(
+                        x=node_x, y=node_y,
+                        mode='markers+text',
+                        marker=dict(
+                            size=node_size,
+                            color=node_color,
+                            line=dict(width=2, color='white')
+                        ),
+                        text=node_text,
+                        textposition="middle center",
+                        textfont=dict(size=8),
+                        hoverinfo='text',
+                        hovertext=node_text,
+                        showlegend=False
+                    ))
+                    
+                    # Update layout for better interactivity
+                    fig.update_layout(
+                        title=f"Transaction Network for Customer {customer_input}",
+                        showlegend=False,
+                        hovermode='closest',
+                        margin=dict(b=20, l=5, r=5, t=40),
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        plot_bgcolor='white',
+                        height=600
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Add edge details table
+                    st.subheader("📊 Transaction Details")
+                    edge_details = []
+                    for edge in G_cust.edges(data=True):
+                        edge_details.append({
+                            'From': edge[0],
+                            'To': edge[1],
+                            'Amount': edge[2].get('amount', 'N/A'),
+                            'Type': edge[2].get('transfer_type', 'N/A'),
+                            'Date': edge[2].get('created', 'N/A'),
+                            'Reference': edge[2].get('reference_no', 'N/A')
+                        })
+                    
+                    if edge_details:
+                        edge_df = pd.DataFrame(edge_details)
+                        st.dataframe(edge_df, use_container_width=True)
                 else:
-                    st.info("Enter a customer number above to explore their transaction network.")
+                    st.info("No transactions found for this customer.")
+            else:
+                st.info("Enter a customer number above to explore their transaction network.")
         except Exception as e:
             st.error(f"Error reading the uploaded file: {e}")
     else:
