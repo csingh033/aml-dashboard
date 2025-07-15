@@ -33,7 +33,7 @@ jobs:
         
     - name: Test Docker build
       run: |
-        docker build -t aml-dashboard-test .
+        docker build -t aml-dashboard-test -f docker/Dockerfile .
         
     - name: Test Docker run
       run: |
