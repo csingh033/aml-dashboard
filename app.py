@@ -384,8 +384,8 @@ with tab2:
                     for node in G_cust.nodes():
                         if node == 'TOP-UP':
                             # Count TOP-UP transactions
-                            topup_txns = df_cust[df_cust['transfer_type'].str.upper() == 'TOP-UP'].shape[0]
-                            topup_sum = df_cust[df_cust['transfer_type'].str.upper() == 'TOP-UP']['amount'].sum()
+                            topup_txns = df_cust[df_cust['transfer_type'].astype(str).str.upper() == 'TOP-UP'].shape[0]
+                            topup_sum = df_cust[df_cust['transfer_type'].astype(str).str.upper() == 'TOP-UP']['amount'].sum()
                             node_stats[node] = {'count': topup_txns, 'sum': topup_sum, 'name': 'TOP-UP'}
                         else:
                             # Count transactions where this node is sender or receiver
@@ -394,14 +394,19 @@ with tab2:
                             total_txns = len(sender_txns) + len(receiver_txns)
                             total_sum = sender_txns['amount'].sum() + receiver_txns['amount'].sum()
                             
-                            # Get customer name if available
-                            customer_name = 'Unknown'
-                            if node in df_cust['customer_no_hashed'].values:
-                                customer_row = df_cust[df_cust['customer_no_hashed'] == node].iloc[0]
-                                if 'CustomerName' in customer_row and pd.notna(customer_row['CustomerName']):
-                                    customer_name = customer_row['CustomerName']
-                            
-                            node_stats[node] = {'count': total_txns, 'sum': total_sum, 'name': customer_name}
+                            # Get name: prefer CustomerName if sender, else beneficiary_name if receiver
+                            name = None
+                            if not sender_txns.empty and 'CustomerName' in sender_txns.columns:
+                                name_candidates = sender_txns['CustomerName'].dropna().unique()
+                                if len(name_candidates) > 0 and name_candidates[0] != 'Unknown':
+                                    name = name_candidates[0]
+                            if (not name or name == 'Unknown') and not receiver_txns.empty and 'beneficiary_name' in receiver_txns.columns:
+                                ben_candidates = receiver_txns['beneficiary_name'].dropna().unique()
+                                if len(ben_candidates) > 0 and ben_candidates[0] != 'Unknown':
+                                    name = ben_candidates[0]
+                            if not name or name == 'Unknown':
+                                name = 'Unknown'
+                            node_stats[node] = {'count': total_txns, 'sum': total_sum, 'name': name}
                     
                     for node in G_cust.nodes():
                         x, y = pos[node]
@@ -503,7 +508,6 @@ with tab2:
                             st.write(f"• Total nodes: {len(G_cust.nodes)}")
                             st.write(f"• Total edges: {len(G_cust.edges)}")
                             st.write(f"• Network density: {nx.density(G_cust):.3f}")
-                            
                         with col2:
                             st.write("**Most Connected Nodes:**")
                             for node, degree in most_connected:
@@ -512,22 +516,21 @@ with tab2:
                                     st.write(f"• **{stats['name']}** ({degree} connections, {stats['count']} txns, ${stats['sum']:,.0f}) - *Selected*")
                                 else:
                                     st.write(f"• {stats['name']} ({degree} connections, {stats['count']} txns, ${stats['sum']:,.0f})")
-                            
-                            # Show cycles if found
-                            if cycles:
-                                st.write("**🔴 Suspicious Cycles Detected:**")
-                                for i, cycle in enumerate(cycles[:3], 1):  # Show first 3 cycles
-                                    cycle_with_names = []
-                                    for node in cycle:
-                                        if node in node_stats:
-                                            cycle_with_names.append(node_stats[node]['name'])
-                                        else:
-                                            cycle_with_names.append(node)
-                                    st.write(f"{i}. {' → '.join(cycle_with_names)}")
-                            else:
-                                st.write("**✅ No suspicious cycles detected**")
+                        # Show cycles if found
+                        if cycles:
+                            st.write("**🔴 Suspicious Cycles Detected:**")
+                            for i, cycle in enumerate(cycles[:3], 1):  # Show first 3 cycles
+                                cycle_with_names = []
+                                for node in cycle:
+                                    if node in node_stats:
+                                        cycle_with_names.append(node_stats[node]['name'])
+                                    else:
+                                        cycle_with_names.append(node)
+                                st.write(f"{i}. {' → '.join(cycle_with_names)}")
                         else:
-                            st.info("Network too small for detailed analysis.")
+                            st.write("**✅ No suspicious cycles detected**")
+                    else:
+                        st.info("Network too small for detailed analysis.")
                 else:
                     st.info("No transactions found for this customer.")
             else:
