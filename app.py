@@ -255,7 +255,7 @@ with tab2:
                     summary_display_columns = []
                     if 'CustomerName' in customer_summary.columns:
                         summary_display_columns.extend(['CustomerName', 'CustomerName_hashed'])
-                    summary_display_columns.extend(['customer_no', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'reasons', 'story'])
+                    summary_display_columns.extend(['customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'reasons', 'story'])
                     
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.dataframe(customer_summary[summary_display_columns], use_container_width=True)
