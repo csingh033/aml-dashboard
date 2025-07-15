@@ -93,8 +93,20 @@ with tab2:
 
                 # Hash customer name and number for privacy
                 df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
-                df['CustomerName_hashed'] = df['CustomerName'].apply(hash_value)
-                df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
+                
+                # Check if CustomerName column exists, if not create a placeholder
+                if 'CustomerName' in df.columns:
+                    df['CustomerName_hashed'] = df['CustomerName'].apply(hash_value)
+                else:
+                    df['CustomerName'] = 'Unknown'
+                    df['CustomerName_hashed'] = 'Unknown'
+                
+                # Check if beneficiary_name column exists, if not create a placeholder
+                if 'beneficiary_name' in df.columns:
+                    df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
+                else:
+                    df['beneficiary_name'] = 'Unknown'
+                    df['beneficiary_name_hashed'] = 'Unknown'
 
                 # Preprocessing
                 df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
@@ -125,8 +137,20 @@ with tab2:
                 suspects = df[df['anomaly'] == 1].copy()
                 if not suspects.empty and isinstance(suspects, pd.DataFrame):
                     suspects['customer_no_hashed'] = suspects['customer_no'].apply(hash_value)
-                    suspects['CustomerName_hashed'] = suspects['CustomerName'].apply(hash_value)
-                    suspects['beneficiary_name_hashed'] = suspects['beneficiary_name'].apply(hash_value)
+                    
+                    # Check if CustomerName column exists
+                    if 'CustomerName' in suspects.columns:
+                        suspects['CustomerName_hashed'] = suspects['CustomerName'].apply(hash_value)
+                    else:
+                        suspects['CustomerName'] = 'Unknown'
+                        suspects['CustomerName_hashed'] = 'Unknown'
+                    
+                    # Check if beneficiary_name column exists
+                    if 'beneficiary_name' in suspects.columns:
+                        suspects['beneficiary_name_hashed'] = suspects['beneficiary_name'].apply(hash_value)
+                    else:
+                        suspects['beneficiary_name'] = 'Unknown'
+                        suspects['beneficiary_name_hashed'] = 'Unknown'
 
                     # Calculate z-score for amount (already scaled in StandardScaler)
                     suspects_features = suspects[['amount', 'hour', 'day_of_week', 'is_international', 'has_beneficiary', 'transaction_count', 'unique_beneficiaries']]
@@ -183,8 +207,14 @@ with tab2:
                         return story
                     customer_summary['story'] = customer_summary.apply(make_story, axis=1)
 
+                    # Create a list of columns to display for customer summary, checking if they exist
+                    summary_display_columns = []
+                    if 'CustomerName' in customer_summary.columns:
+                        summary_display_columns.extend(['CustomerName', 'CustomerName_hashed'])
+                    summary_display_columns.extend(['customer_no', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'reasons', 'story'])
+                    
                     st.subheader("🧑‍💼 Customer-level AML Summary")
-                    st.dataframe(customer_summary[['CustomerName', 'CustomerName_hashed', 'customer_no', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'reasons', 'story']], use_container_width=True)
+                    st.dataframe(customer_summary[summary_display_columns], use_container_width=True)
                 else:
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.info("No anomalous transactions detected.")
@@ -198,7 +228,16 @@ with tab2:
                     cust_mask = (df['customer_no_hashed'] == customer_input) | (df['beneficiary_name_hashed'] == customer_input)
                     df_cust = df[cust_mask].copy()  # ensure DataFrame
                     st.write(f"DEBUG: Number of transactions in df_cust for this customer: {len(df_cust)}")
-                    st.dataframe(df_cust[['customer_no', 'customer_no_hashed', 'CustomerName', 'CustomerName_hashed', 'transfer_type', 'beneficiary_name', 'beneficiary_name_hashed', 'amount', 'createdDateTime']], use_container_width=True)
+                    # Create a list of columns to display, checking if they exist
+                    display_columns = ['customer_no', 'customer_no_hashed']
+                    if 'CustomerName' in df_cust.columns:
+                        display_columns.extend(['CustomerName', 'CustomerName_hashed'])
+                    display_columns.extend(['transfer_type'])
+                    if 'beneficiary_name' in df_cust.columns:
+                        display_columns.extend(['beneficiary_name', 'beneficiary_name_hashed'])
+                    display_columns.extend(['amount', 'createdDateTime'])
+                    
+                    st.dataframe(df_cust[display_columns], use_container_width=True)
                     topup_count = df_cust['transfer_type'].astype(str).str.upper().eq('TOP-UP').sum()
                     st.write(f"DEBUG: Number of Top-up transactions for this customer: {topup_count}")
                     if not df_cust.empty:
@@ -477,8 +516,17 @@ with tab3:
                 Keep the analysis concise and actionable. Focus on the most important AML concerns.
                 """
                 
+                # Create a list of columns to display for LLM analysis, checking if they exist
+                llm_display_columns = ['customer_no', 'customer_no_hashed']
+                if 'CustomerName' in df_cust.columns:
+                    llm_display_columns.extend(['CustomerName', 'CustomerName_hashed'])
+                llm_display_columns.extend(['transfer_type'])
+                if 'beneficiary_name' in df_cust.columns:
+                    llm_display_columns.extend(['beneficiary_name', 'beneficiary_name_hashed'])
+                llm_display_columns.extend(['amount', 'createdDateTime'])
+                
                 st.subheader("📊 Transaction Data for Analysis")
-                st.dataframe(df_cust[['customer_no', 'customer_no_hashed', 'CustomerName', 'CustomerName_hashed', 'transfer_type', 'beneficiary_name', 'beneficiary_name_hashed', 'amount', 'createdDateTime']], use_container_width=True)
+                st.dataframe(df_cust[llm_display_columns], use_container_width=True)
                 
                 st.subheader("🔍 RAG Prompt Sent to LLM:")
                 st.code(prompt, language="markdown")
