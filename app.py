@@ -569,6 +569,13 @@ with tab3:
         df['beneficiary_name_hashed'] = df['beneficiary_name']
         df['transfer_type_hashed'] = df['transfer_type']
         
+        # Check if CustomerName column exists and create hashed version
+        if 'CustomerName' in df.columns:
+            df['CustomerName_hashed'] = df['CustomerName'].apply(hash_value)
+        else:
+            df['CustomerName'] = 'Unknown'
+            df['CustomerName_hashed'] = 'Unknown'
+        
         # Customer search input
         customer_options = sorted(df['customer_no_hashed'].unique())
         selected_customer = st.selectbox(
