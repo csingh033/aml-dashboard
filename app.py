@@ -50,7 +50,7 @@ with tab1:
                 df = pd.read_csv(uploaded_file)
                 df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
                 df['date'] = df['createdDateTime'].dt.date
-                df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
+                df['customer_no_hashed'] = df['customer_no']
                 # 1. Day-wise count of transactions by transfer type
                 count_df = df.groupby(['date', 'transfer_type']).size().reset_index()
                 count_df = count_df.rename(columns={0: 'txn_count'})
@@ -92,9 +92,9 @@ with tab2:
                 df = pd.read_csv(uploaded_file)
 
                 # Hash customer name and number for privacy
-                df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
-                df['CustomerName_hashed'] = df['CustomerName'].apply(hash_value)
-                df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
+                df['customer_no_hashed'] = df['customer_no']
+                df['CustomerName_hashed'] = df['CustomerName']
+                df['beneficiary_name_hashed'] = df['beneficiary_name']
 
                 # Preprocessing
                 df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
@@ -124,9 +124,9 @@ with tab2:
                 # Calculate z-score for amount (already scaled in StandardScaler)
                 suspects = df[df['anomaly'] == 1].copy()
                 if not suspects.empty and isinstance(suspects, pd.DataFrame):
-                    suspects['customer_no_hashed'] = suspects['customer_no'].apply(hash_value)
-                    suspects['CustomerName_hashed'] = suspects['CustomerName'].apply(hash_value)
-                    suspects['beneficiary_name_hashed'] = suspects['beneficiary_name'].apply(hash_value)
+                    suspects['customer_no_hashed'] = suspects['customer_no']
+                    suspects['CustomerName_hashed'] = suspects['CustomerName']
+                    suspects['beneficiary_name_hashed'] = suspects['beneficiary_name']
 
                     # Calculate z-score for amount (already scaled in StandardScaler)
                     suspects_features = suspects[['amount', 'hour', 'day_of_week', 'is_international', 'has_beneficiary', 'transaction_count', 'unique_beneficiaries']]
@@ -423,9 +423,9 @@ with tab3:
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file)
         # Hash customer numbers for privacy
-        df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
-        df['beneficiary_name_hashed'] = df['beneficiary_name'].apply(hash_value)
-        df['transfer_type_hashed'] = df['transfer_type'].apply(hash_value)
+        df['customer_no_hashed'] = df['customer_no']
+        df['beneficiary_name_hashed'] = df['beneficiary_name']
+        df['transfer_type_hashed'] = df['transfer_type']
         
         # Customer search input
         customer_options = sorted(df['customer_no_hashed'].unique())
@@ -527,10 +527,10 @@ with tab3:
 with tab4:
     st.header("🔍 Customer ID Lookup")
     st.markdown("""
-    Upload a CSV file containing hashed customer IDs to get the unhashed versions of suspected customers.
-    This tool helps investigators retrieve actual customer details for flagged transactions.
+    Upload a CSV file containing customer IDs to get detailed information about customers.
+    This tool helps investigators retrieve customer details for flagged transactions.
     
-    **Required CSV format:** The file should have a column named 'customer_no_hashed' containing the hashed customer numbers.
+    **Required CSV format:** The file should have a column named 'customer_no_hashed' containing the customer numbers.
     """)
     
     # Check if we have processed data from the main dashboard
@@ -543,9 +543,9 @@ with tab4:
         # Create a mapping of hashed to original customer numbers
         customer_mapping = {}
         for _, row in df.iterrows():
-            hashed_customer = hash_value(row['customer_no'])
-            if hashed_customer not in customer_mapping:
-                customer_mapping[hashed_customer] = {
+            customer_id = row['customer_no']
+            if customer_id not in customer_mapping:
+                customer_mapping[customer_id] = {
                     'original_customer_no': row['customer_no'],
                     'original_customer_name': row['CustomerName'],
                     'total_transactions': len(df[df['customer_no'] == row['customer_no']])
@@ -578,11 +578,11 @@ with tab4:
                     found_count = 0
                     
                     for _, row in lookup_df.iterrows():
-                        hashed_id = str(row['customer_no_hashed'])
-                        if hashed_id in customer_mapping:
-                            mapping = customer_mapping[hashed_id]
+                        customer_id = str(row['customer_no_hashed'])
+                        if customer_id in customer_mapping:
+                            mapping = customer_mapping[customer_id]
                             results.append({
-                                'hashed_customer_no': hashed_id,
+                                'customer_no': customer_id,
                                 'original_customer_no': mapping['original_customer_no'],
                                 'original_customer_name': mapping['original_customer_name'],
                                 'total_transactions': mapping['total_transactions']
@@ -590,7 +590,7 @@ with tab4:
                             found_count += 1
                         else:
                             results.append({
-                                'hashed_customer_no': hashed_id,
+                                'customer_no': customer_id,
                                 'original_customer_no': 'NOT FOUND',
                                 'original_customer_name': 'NOT FOUND',
                                 'total_transactions': 0
