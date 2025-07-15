@@ -277,22 +277,118 @@ with tab2:
                         # --- Improved cycle detection: run on the full customer subgraph ---
                         cycles = find_cycles(G_cust)
                         st.markdown(f"**Cycles involving this customer:** {cycles if cycles else 'None found'}")
-                        fig, ax = plt.subplots(figsize=(6, 4))
+                        
+                        # Create interactive network graph using Plotly
+                        import plotly.graph_objects as go
+                        
+                        # Prepare node positions using spring layout
                         pos = nx.spring_layout(G_cust, seed=42)
-                        nx.draw(G_cust, pos, with_labels=False, node_size=400, node_color='lightblue', edge_color='gray', ax=ax)
-                        nx.draw_networkx_labels(G_cust, pos, labels=labels, font_size=8, ax=ax)
-                        if hubs and customer_input in pos:
-                            nx.draw_networkx_nodes(G_cust, pos, nodelist=hubs, node_color='red', ax=ax)
-                        st.pyplot(fig)
-                        # After drawing the graph, add a summary below
-                        num_edges = G_cust.number_of_edges()
-                        out_count = int(G_cust.out_degree(customer_input)) if customer_input in G_cust.nodes else 0
-                        in_count = int(G_cust.in_degree(customer_input)) if customer_input in G_cust.nodes else 0
-                        st.markdown(f"**Summary for {customer_input}:**")
-                        st.write(f"- Total transactions (edges) involving this customer: **{num_edges}**")
-                        st.write(f"- Outgoing transactions (sent): **{out_count}**")
-                        st.write(f"- Incoming transactions (received): **{in_count}**")
-                        st.write(f"- Out + In = **{out_count + in_count}** (should match node label if no self-loops)")
+                        
+                        # Create node traces
+                        node_x = []
+                        node_y = []
+                        node_text = []
+                        node_color = []
+                        node_size = []
+                        
+                        for node in G_cust.nodes():
+                            x, y = pos[node]
+                            node_x.append(x)
+                            node_y.append(y)
+                            
+                            # Node label with transaction count
+                            count = all_nodes.get(node, 0)
+                            if node == 'TOP-UP':
+                                node_text.append(f"TOP-UP ({topup_count})")
+                            else:
+                                node_text.append(f"{node} ({count})")
+                            
+                            # Color nodes based on type
+                            if node == customer_input:
+                                node_color.append('red')  # Highlight selected customer
+                                node_size.append(25)
+                            elif node == 'TOP-UP':
+                                node_color.append('orange')  # TOP-UP node
+                                node_size.append(20)
+                            else:
+                                node_color.append('lightblue')  # Regular nodes
+                                node_size.append(15)
+                        
+                        # Create edge traces
+                        edge_x = []
+                        edge_y = []
+                        edge_text = []
+                        
+                        for edge in G_cust.edges(data=True):
+                            x0, y0 = pos[edge[0]]
+                            x1, y1 = pos[edge[1]]
+                            edge_x.extend([x0, x1, None])
+                            edge_y.extend([y0, y1, None])
+                            
+                            # Edge hover text
+                            amount = edge[2].get('amount', 'N/A')
+                            transfer_type = edge[2].get('transfer_type', 'N/A')
+                            edge_text.append(f"Amount: {amount}<br>Type: {transfer_type}")
+                        
+                        # Create the network graph
+                        fig = go.Figure()
+                        
+                        # Add edges
+                        fig.add_trace(go.Scatter(
+                            x=edge_x, y=edge_y,
+                            mode='lines',
+                            line=dict(width=1, color='gray'),
+                            hoverinfo='none',
+                            showlegend=False
+                        ))
+                        
+                        # Add nodes
+                        fig.add_trace(go.Scatter(
+                            x=node_x, y=node_y,
+                            mode='markers+text',
+                            marker=dict(
+                                size=node_size,
+                                color=node_color,
+                                line=dict(width=2, color='white')
+                            ),
+                            text=node_text,
+                            textposition="middle center",
+                            textfont=dict(size=8),
+                            hoverinfo='text',
+                            hovertext=node_text,
+                            showlegend=False
+                        ))
+                        
+                        # Update layout for better interactivity
+                        fig.update_layout(
+                            title=f"Transaction Network for Customer {customer_input}",
+                            showlegend=False,
+                            hovermode='closest',
+                            margin=dict(b=20, l=5, r=5, t=40),
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            plot_bgcolor='white',
+                            height=600
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Add edge details table
+                        st.subheader("📊 Transaction Details")
+                        edge_details = []
+                        for edge in G_cust.edges(data=True):
+                            edge_details.append({
+                                'From': edge[0],
+                                'To': edge[1],
+                                'Amount': edge[2].get('amount', 'N/A'),
+                                'Type': edge[2].get('transfer_type', 'N/A'),
+                                'Date': edge[2].get('created', 'N/A'),
+                                'Reference': edge[2].get('reference_no', 'N/A')
+                            })
+                        
+                        if edge_details:
+                            edge_df = pd.DataFrame(edge_details)
+                            st.dataframe(edge_df, use_container_width=True)
                     else:
                         st.info("No transactions found for this customer.")
                 else:
