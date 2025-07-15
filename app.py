@@ -145,6 +145,7 @@ with tab2:
                         total_flagged_amount = ('amount', 'sum'),
                         transfer_types = ('transfer_type', consolidate_types),
                         beneficiaries = ('beneficiary_name_hashed', consolidate_beneficiaries),
+                        reasons = ('reason', consolidate_reasons),
                         max_zscore = ('amount_zscore', 'max'),
                         max_percentile = ('amount_percentile', 'max')
                     ).reset_index()
@@ -162,7 +163,7 @@ with tab2:
                     customer_summary['story'] = customer_summary.apply(make_story, axis=1)
 
                     st.subheader("🧑‍💼 Customer-level AML Summary")
-                    st.dataframe(customer_summary[['CustomerName_hashed', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'story']], use_container_width=True)
+                    st.dataframe(customer_summary[['CustomerName_hashed', 'customer_no_hashed', 'total_txn', 'total_flagged_txns', 'total_flagged_amount', 'max_zscore', 'max_percentile', 'transfer_types', 'beneficiaries', 'reasons', 'story']], use_container_width=True)
                 else:
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.info("No anomalous transactions detected.")
