@@ -102,9 +102,6 @@ with tab2:
             uploaded_file.seek(0)
             df = pd.read_csv(uploaded_file)
             
-            st.write("✅ CSV file loaded successfully")
-            st.write(f"📊 Data shape: {df.shape}")
-            
             # Check if required columns exist
             required_columns = ['customer_no', 'amount', 'transfer_type', 'createdDateTime']
             missing_columns = [col for col in required_columns if col not in df.columns]
@@ -126,22 +123,15 @@ with tab2:
                 """)
                 st.stop()
             
-            st.write("✅ All required columns present")
-            
             # Check if optional columns exist and create placeholders if missing
             if 'reference_no' not in df.columns:
                 df['reference_no'] = range(len(df))  # Create sequential reference numbers
-                st.write("⚠️ Created reference_no column")
             
             if 'CustomerName' not in df.columns:
                 df['CustomerName'] = 'Unknown'
-                st.write("⚠️ Created CustomerName column")
             
             if 'beneficiary_name' not in df.columns:
                 df['beneficiary_name'] = 'Unknown'
-                st.write("⚠️ Created beneficiary_name column")
-            
-            st.write("✅ Data preprocessing completed")
             
             # Hash customer name and number for privacy
             df['customer_no_hashed'] = df['customer_no'].apply(hash_value)
@@ -160,8 +150,6 @@ with tab2:
                 df['beneficiary_name'] = 'Unknown'
                 df['beneficiary_name_hashed'] = 'Unknown'
 
-            st.write("✅ Data hashing completed")
-
             # Preprocessing
             df['createdDateTime'] = pd.to_datetime(df['createdDateTime'])
             df['hour'] = df['createdDateTime'].dt.hour
@@ -173,8 +161,6 @@ with tab2:
             df['transaction_count'] = df.groupby('customer_no')['reference_no'].transform('count')
             df['unique_beneficiaries'] = df.groupby('customer_no')['beneficiary_name'].transform('nunique')
             df['date'] = df['createdDateTime'].dt.date
-
-            st.write("✅ Feature engineering completed")
 
             # --- Anomaly Detection (Moved before suspects filtering) ---
             features = df[['amount', 'hour', 'day_of_week', 'is_international', 
@@ -188,13 +174,9 @@ with tab2:
             df['anomaly'] = model.fit_predict(scaled)
             df['anomaly'] = df['anomaly'].apply(lambda x: 1 if x == -1 else 0)
 
-            st.write("✅ Anomaly detection completed")
-            st.write(f"🚨 Found {df['anomaly'].sum()} anomalous transactions out of {len(df)} total")
-
             # --- Customer-level summary ---
             # Calculate z-score for amount (already scaled in StandardScaler)
             suspects = df[df['anomaly'] == 1].copy()
-            st.write(f"🔍 Processing {len(suspects)} suspicious transactions...")
             
             try:
                 if not suspects.empty and isinstance(suspects, pd.DataFrame):
@@ -214,14 +196,10 @@ with tab2:
                         suspects['beneficiary_name'] = 'Unknown'
                         suspects['beneficiary_name_hashed'] = 'Unknown'
 
-                    st.write("✅ Suspects data prepared")
-
                     # Calculate z-score for amount (already scaled in StandardScaler)
                     suspects_features = suspects[['amount', 'hour', 'day_of_week', 'is_international', 'has_beneficiary', 'transaction_count', 'unique_beneficiaries']]
                     suspects['amount_zscore'] = pd.Series(scaler.transform(suspects_features)[:, 0], index=suspects.index)
                     suspects['amount_percentile'] = pd.Series(suspects['amount']).rank(pct=True) * 100
-
-                    st.write("✅ Z-scores calculated")
 
                     # Generate reasons for flagged transactions
                     def generate_reason(row):
@@ -244,8 +222,6 @@ with tab2:
                     
                     suspects['reason'] = suspects.apply(generate_reason, axis=1)
 
-                    st.write("✅ Reasons generated")
-
                     def consolidate_reasons(reasons):
                         return ' | '.join(sorted(set(reasons)))
                     def consolidate_types(types):
@@ -262,8 +238,6 @@ with tab2:
                         max_zscore = ('amount_zscore', 'max'),
                         max_percentile = ('amount_percentile', 'max')
                     ).reset_index()
-
-                    st.write("✅ Customer summary created")
 
                     # Add total transactions for each customer
                     total_txns_by_customer = df.groupby('customer_no_hashed')['reference_no'].count().reset_index()
@@ -285,7 +259,6 @@ with tab2:
                     
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     st.dataframe(customer_summary[summary_display_columns], use_container_width=True)
-                    st.write("✅ Customer summary displayed successfully")
                     
                 else:
                     st.subheader("🧑‍💼 Customer-level AML Summary")
@@ -293,9 +266,6 @@ with tab2:
                     
             except Exception as e:
                 st.error(f"❌ Error in customer summary processing: {str(e)}")
-                st.write("Debug info:")
-                st.write(f"Suspects shape: {suspects.shape if hasattr(suspects, 'shape') else 'N/A'}")
-                st.write(f"Suspects columns: {list(suspects.columns) if hasattr(suspects, 'columns') else 'N/A'}")
                 import traceback
                 st.code(traceback.format_exc())
 
@@ -307,7 +277,7 @@ with tab2:
                 # Filter transactions where the hashed customer is sender or receiver
                 cust_mask = (df['customer_no_hashed'] == customer_input) | (df['beneficiary_name_hashed'] == customer_input)
                 df_cust = df[cust_mask].copy()  # ensure DataFrame
-                st.write(f"DEBUG: Number of transactions in df_cust for this customer: {len(df_cust)}")
+                
                 # Create a list of columns to display, checking if they exist
                 display_columns = ['customer_no', 'customer_no_hashed']
                 if 'CustomerName' in df_cust.columns:
@@ -319,7 +289,6 @@ with tab2:
                 
                 st.dataframe(df_cust[display_columns], use_container_width=True)
                 topup_count = df_cust['transfer_type'].astype(str).str.upper().eq('TOP-UP').sum()
-                st.write(f"DEBUG: Number of Top-up transactions for this customer: {topup_count}")
                 if not df_cust.empty:
                     # Build graph using hashed values (all transactions where customer is sender or receiver)
                     def build_hashed_graph(df):
