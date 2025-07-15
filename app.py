@@ -106,6 +106,7 @@ with tab2:
             else:
                 uploaded_file.seek(0)
                 df = pd.read_csv(uploaded_file)
+                st.write('DEBUG: Columns in uploaded file:', list(df.columns))
 
                 # Check if required columns exist
                 required_columns = ['customer_no']
