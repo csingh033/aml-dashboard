@@ -277,7 +277,8 @@ with tab2:
                         ]
                     ]
                     suspects["amount_zscore"] = pd.Series(
-                        scaler.transform(suspects_features)[:, 0].ravel(), index=suspects.index
+                        scaler.transform(suspects_features)[:, 0].ravel(),
+                        index=suspects.index,
                     )
                     suspects["amount_percentile"] = (
                         pd.Series(suspects["amount"]).rank(pct=True) * 100
