@@ -232,7 +232,7 @@ with tab2:
             scaled = scaler.fit_transform(features)
 
             # Anomaly Detection
-            model = IsolationForest(contamination=0.01, random_state=42)
+            model = IsolationForest(contamination="auto", random_state=42)
             df["anomaly"] = model.fit_predict(scaled)
             df["anomaly"] = df["anomaly"].apply(lambda x: 1 if x == -1 else 0)
 
@@ -277,7 +277,7 @@ with tab2:
                         ]
                     ]
                     suspects["amount_zscore"] = pd.Series(
-                        scaler.transform(suspects_features)[:, 0], index=suspects.index
+                        scaler.transform(suspects_features)[:, 0].ravel(), index=suspects.index
                     )
                     suspects["amount_percentile"] = (
                         pd.Series(suspects["amount"]).rank(pct=True) * 100
