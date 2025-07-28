@@ -70,8 +70,8 @@ docker build -f docker/Dockerfile -t aml-dashboard .
 ## 🚀 Step 4: Run the Updated Dashboard
 
 ```bash
-# Run the dashboard on port 8501
-docker run -p 8501:8501 aml-dashboard
+# Run the dashboard on port 8502 (external) to 8501 (internal)
+docker run -p 8502:8501 aml-dashboard
 ```
 
 **Expected Output:**
@@ -86,7 +86,7 @@ Collecting usage statistics. To deactivate, set browser.gatherUsageStats to Fals
 ## 🌐 Step 5: Access the Dashboard
 
 1. Open your web browser
-2. Navigate to: `http://localhost:8501`
+2. Navigate to: `http://localhost:8502`
 3. The dashboard should load without any OpenAI errors
 
 ---
@@ -102,10 +102,10 @@ Collecting usage statistics. To deactivate, set browser.gatherUsageStats to Fals
 
 ## 🔧 Troubleshooting
 
-### **If Port 8501 is Already in Use:**
+### **If Port 8502 is Already in Use:**
 ```bash
-# Find what's using port 8501
-netstat -ano | findstr :8501
+# Find what's using port 8502
+netstat -ano | findstr :8502
 
 # Kill the process (replace XXXX with the PID from above command)
 taskkill /PID XXXX /F
@@ -159,7 +159,7 @@ If you encounter any issues:
 
 ✅ Repository updated successfully  
 ✅ Docker image built without errors  
-✅ Dashboard loads at http://localhost:8501  
+✅ Dashboard loads at http://localhost:8502  
 ✅ LLM Investigator tab works without OpenAI errors  
 ✅ All tabs and features are functional  
 

@@ -17,6 +17,9 @@ import os
 from dotenv import load_dotenv
 from pyvis.network import Network
 import plotly.graph_objects as go
+from thefuzz import fuzz
+from itertools import combinations
+import re
 
 # Make hash_value globally available
 
@@ -26,6 +29,171 @@ def hash_value(val, length=10):
         return ""
     return hashlib.sha256(str(val).encode()).hexdigest()[:length]
 
+def partial_name(name):
+    if isinstance(name, str) and len(name) > 8:
+        return name[:4] + name[-4:]
+    return name
+
+# Beneficiary Name Matching Functions
+def clean_name(name):
+    """Clean and standardize name for comparison"""
+    if pd.isna(name) or not isinstance(name, str):
+        return ""
+    return re.sub(r'[^A-Za-z\s]', '', name.upper().strip())
+
+def extract_first_last_4(name):
+    """Extract first 4 and last 4 characters from name"""
+    if pd.isna(name) or not isinstance(name, str):
+        return "", ""
+    clean = clean_name(name)
+    if len(clean) < 8:
+        return clean, clean
+    return clean[:4], clean[-4:]
+
+def calculate_hashed_similarity(name1, name2):
+    """Calculate similarity for hashed names (same first 4 and last 4 letters)"""
+    first1, last1 = extract_first_last_4(name1)
+    first2, last2 = extract_first_last_4(name2)
+    
+    if first1 == first2 and last1 == last2 and first1 and last1:
+        # High similarity if first 4 and last 4 match
+        len_diff = abs(len(clean_name(name1)) - len(clean_name(name2)))
+        # Penalize large length differences
+        length_penalty = min(len_diff * 5, 30)
+        return max(90 - length_penalty, 60)
+    return 0
+
+def calculate_word_order_similarity(name1, name2):
+    """Calculate similarity for names with different word order"""
+    words1 = set(clean_name(name1).split())
+    words2 = set(clean_name(name2).split())
+    
+    if not words1 or not words2:
+        return 0
+    
+    intersection = len(words1.intersection(words2))
+    union = len(words1.union(words2))
+    
+    if union == 0:
+        return 0
+    
+    jaccard_similarity = (intersection / union) * 100
+    
+    # Boost if all words match but in different order
+    if words1 == words2:
+        return 95
+    
+    return jaccard_similarity
+
+def calculate_partial_name_similarity(name1, name2):
+    """Calculate similarity for partial names (full vs first+last, etc.)"""
+    words1 = clean_name(name1).split()
+    words2 = clean_name(name2).split()
+    
+    if not words1 or not words2:
+        return 0
+    
+    # Check if shorter name is subset of longer name
+    if len(words1) > len(words2):
+        longer, shorter = words1, words2
+    else:
+        longer, shorter = words2, words1
+    
+    matches = sum(1 for word in shorter if word in longer)
+    
+    if matches == len(shorter) and len(shorter) >= 2:
+        # All words in shorter name found in longer name
+        return 85
+    elif matches == len(shorter) and len(shorter) == 1:
+        # Single word match (less reliable)
+        return 60
+    
+    return (matches / max(len(words1), len(words2))) * 70
+
+def calculate_comprehensive_similarity(name1, name2):
+    """Calculate comprehensive similarity score combining all methods"""
+    if pd.isna(name1) or pd.isna(name2) or not name1 or not name2:
+        return 0
+    
+    # Basic fuzzy string similarity
+    basic_similarity = fuzz.ratio(clean_name(name1), clean_name(name2))
+    
+    # Different matching approaches
+    hashed_sim = calculate_hashed_similarity(name1, name2)
+    word_order_sim = calculate_word_order_similarity(name1, name2)
+    partial_sim = calculate_partial_name_similarity(name1, name2)
+    
+    # Token-based similarities (more conservative for AML)
+    token_sort_sim = fuzz.token_sort_ratio(clean_name(name1), clean_name(name2))
+    
+    # Make token_set_ratio more conservative by requiring better overall match
+    token_set_sim = fuzz.token_set_ratio(clean_name(name1), clean_name(name2))
+    
+    # AML-specific conservative adjustments for token_set_ratio
+    words1 = clean_name(name1).split()
+    words2 = clean_name(name2).split()
+    set1 = set(words1)
+    set2 = set(words2)
+    
+    # Critical fix: If one set is a proper subset of another, limit similarity
+    if set1 != set2 and (set1.issubset(set2) or set2.issubset(set1)):
+        # For AML, subset matches should not exceed 75% unless they're very similar
+        if token_set_sim > 75:
+            # Calculate overlap ratio - how much of the larger set is covered
+            intersection = len(set1.intersection(set2))
+            larger_set_size = max(len(set1), len(set2))
+            overlap_ratio = intersection / larger_set_size if larger_set_size > 0 else 0
+            
+            # Adjust token_set_sim based on overlap ratio
+            max_subset_similarity = 50 + (overlap_ratio * 25)  # Max 75% for perfect overlap
+            token_set_sim = min(token_set_sim, max_subset_similarity)
+    
+    # For AML purposes, be more conservative with token_set_ratio
+    # If token_set gives high score but basic similarity is low, reduce it
+    if token_set_sim > 80 and basic_similarity < 60:
+        token_set_sim = min(token_set_sim, basic_similarity + 20)
+    
+    # Additional check: if names have very different lengths, be more conservative
+    len1, len2 = len(clean_name(name1)), len(clean_name(name2))
+    length_ratio = min(len1, len2) / max(len1, len2) if max(len1, len2) > 0 else 0
+    
+    # If length difference is significant, apply penalty to token-based matches
+    if length_ratio < 0.6:  # Names differ significantly in length
+        token_set_sim = min(token_set_sim, 75)
+        token_sort_sim = min(token_sort_sim, 75)
+    
+    # If one name has significantly fewer words, be more conservative
+    if len(words1) != len(words2) and abs(len(words1) - len(words2)) > 1:
+        if token_set_sim > 90:
+            token_set_sim = min(token_set_sim, 70)  # Cap at 70% for mismatched word counts
+    
+    # Special case: single word vs multi-word should not exceed 70%
+    if (len(words1) == 1 and len(words2) > 1) or (len(words2) == 1 and len(words1) > 1):
+        max_single_word_match = 70
+        token_set_sim = min(token_set_sim, max_single_word_match)
+        token_sort_sim = min(token_sort_sim, max_single_word_match)
+    
+    # Take the maximum similarity from all methods, but be more conservative
+    max_similarity = max(basic_similarity, hashed_sim, word_order_sim, partial_sim, token_sort_sim, token_set_sim)
+    
+    return max_similarity
+
+def find_similar_names(target_name, all_names, threshold=70):
+    """Find all names similar to target name above threshold"""
+    similar_names = []
+    
+    for name in all_names:
+        if name != target_name:
+            similarity = calculate_comprehensive_similarity(target_name, name)
+            if similarity >= threshold:
+                similar_names.append({
+                    'name': name,
+                    'similarity': similarity
+                })
+    
+    # Sort by similarity descending
+    similar_names.sort(key=lambda x: x['similarity'], reverse=True)
+    return similar_names
 
 # Load environment variables from .env
 load_dotenv()
@@ -33,10 +201,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 st.set_page_config(layout="wide")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     [
         "📊 EDA",
         "💼 AML Dashboard",
+        "👥 Beneficiary Analysis",
         "🤖 LLM Investigator",
         "🔍 Customer ID Lookup",
         "ℹ️ Model Information",
@@ -78,6 +247,24 @@ with tab1:
             df["createdDateTime"] = pd.to_datetime(df["createdDateTime"])
             df["date"] = df["createdDateTime"].dt.date
             df["customer_no_hashed"] = df["customer_no"]
+
+            # Apply partial_name to CustomerName and beneficiary_name
+            if "CustomerName" in df.columns:
+                df["customer_name_partial"] = df["CustomerName"].apply(partial_name)
+            else:
+                df["CustomerName"] = "Unknown"
+                df["customer_name_partial"] = "Unknown"
+
+            if "beneficiary_name" in df.columns:
+                df["beneficiary_name_partial"] = df["beneficiary_name"].apply(partial_name)
+            else:
+                df["beneficiary_name"] = "Unknown"
+                df["beneficiary_name_partial"] = "Unknown"
+
+            df["is_self_transfer"] = df["customer_name_partial"] == df["beneficiary_name_partial"]
+
+            st.session_state["processed_df"] = df
+
             # 1. Day-wise count of transactions by transfer type
             count_df = df.groupby(["date", "transfer_type"]).size().reset_index()
             count_df = count_df.rename(columns={0: "txn_count"})
@@ -136,9 +323,10 @@ with tab2:
     uploaded_file = st.session_state.get("uploaded_file", None)
     if uploaded_file is not None:
         try:
-            uploaded_file.seek(0)
-            # Read CSV with customer_no as string to prevent comma formatting
-            df = pd.read_csv(uploaded_file, dtype={"customer_no": str})
+            df = st.session_state.get("processed_df", None)
+            if df is None:
+                st.info("Please upload a transaction CSV file in the EDA tab first.")
+                st.stop()
 
             # Check if required columns exist
             required_columns = [
@@ -231,10 +419,26 @@ with tab2:
             scaler = StandardScaler()
             scaled = scaler.fit_transform(features)
 
+            # Anomaly Detection Configuration
+            st.sidebar.subheader("🔧 Anomaly Detection Settings")
+            contamination_rate = st.sidebar.slider(
+                "Contamination Rate", 
+                min_value=0.01, 
+                max_value=0.20, 
+                value=0.02,  # Changed from 0.05 to 0.02 (more conservative)
+                step=0.01,
+                help="Expected proportion of anomalies in the data (lower = more conservative)"
+            )
+            
             # Anomaly Detection
-            model = IsolationForest(contamination="auto", random_state=42)
+            model = IsolationForest(contamination=contamination_rate, random_state=42)
             df["anomaly"] = model.fit_predict(scaled)
             df["anomaly"] = df["anomaly"].apply(lambda x: 1 if x == -1 else 0)
+            
+            # Show detection statistics
+            total_transactions = len(df)
+            flagged_transactions = df["anomaly"].sum()
+            st.info(f"🔍 Isolation Forest detected {flagged_transactions} anomalous transactions out of {total_transactions} total ({flagged_transactions/total_transactions*100:.1f}%)")
 
             # --- Customer-level summary ---
             # Calculate z-score for amount (already scaled in StandardScaler)
@@ -358,9 +562,92 @@ with tab2:
                         make_story, axis=1
                     )
 
+                    # Add filtering controls for high-risk customers
+                    st.subheader("🧑‍💼 Customer-level AML Summary")
+                    
+                    # Create filter controls
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        min_flagged_txns = st.number_input(
+                            "Minimum flagged transactions", 
+                            min_value=1, 
+                            value=4,  # Increased from 2 to 4
+                            help="Show customers with at least this many flagged transactions"
+                        )
+                    
+                    with col2:
+                        min_zscore = st.number_input(
+                            "Minimum Z-score threshold", 
+                            min_value=0.0, 
+                            value=2.0,  # Increased from 1.5 to 2.0
+                            step=0.1,
+                            help="Show customers with max Z-score above this threshold"
+                        )
+                    
+                    with col3:
+                        min_percentile = st.number_input(
+                            "Minimum percentile threshold", 
+                            min_value=0.0, 
+                            max_value=100.0, 
+                            value=90.0,  # Increased from 80.0 to 90.0
+                            step=5.0,
+                            help="Show customers with max percentile above this threshold"
+                        )
+                    
+                    # Add additional filter row for more restrictive filtering
+                    col4, col5, col6 = st.columns(3)
+                    
+                    with col4:
+                        min_flagged_amount = st.number_input(
+                            "Minimum total flagged amount", 
+                            min_value=0.0, 
+                            value=10000.0,  # New filter for high-value customers
+                            step=1000.0,
+                            help="Show customers with total flagged amount above this threshold"
+                        )
+                    
+                    with col5:
+                        min_risk_score = st.number_input(
+                            "Minimum risk score", 
+                            min_value=0.0, 
+                            value=1.5,  # New composite risk filter
+                            step=0.1,
+                            help="Show customers with composite risk score above this threshold"
+                        )
+                        
+                    with col6:
+                        max_results = st.number_input(
+                            "Max customers to show", 
+                            min_value=1, 
+                            max_value=100, 
+                            value=25,  # Limit to top 25 customers
+                            help="Limit results to top N highest-risk customers"
+                        )
+                    
+                    # Apply filtering criteria (more restrictive)
+                    filtered_summary = customer_summary[
+                        (customer_summary["total_flagged_txns"] >= min_flagged_txns) &
+                        (customer_summary["max_zscore"] >= min_zscore) &
+                        (customer_summary["max_percentile"] >= min_percentile) &
+                        (customer_summary["total_flagged_amount"] >= min_flagged_amount)
+                    ].copy()
+                    
+                    # Sort by risk level (combination of z-score and percentile)
+                    filtered_summary["risk_score"] = (
+                        filtered_summary["max_zscore"] * 0.6 + 
+                        filtered_summary["max_percentile"] * 0.004  # Scale percentile to similar range
+                    )
+                    filtered_summary = filtered_summary.sort_values("risk_score", ascending=False)
+                    
+                    # Apply additional risk score filter and limit results
+                    filtered_summary = filtered_summary[
+                        filtered_summary["risk_score"] >= min_risk_score
+                    ].head(max_results)
+
                     # Create a list of columns to display for customer summary, checking if they exist
                     summary_display_columns = []
-                    if "CustomerName" in customer_summary.columns:
+                    if "CustomerName" in filtered_summary.columns:
                         summary_display_columns.extend(
                             ["CustomerName", "CustomerName_hashed"]
                         )
@@ -372,6 +659,7 @@ with tab2:
                             "total_flagged_amount",
                             "max_zscore",
                             "max_percentile",
+                            "risk_score",
                             "transfer_types",
                             "beneficiaries",
                             "reasons",
@@ -379,11 +667,41 @@ with tab2:
                         ]
                     )
 
-                    st.subheader("🧑‍💼 Customer-level AML Summary")
-                    st.dataframe(
-                        customer_summary[summary_display_columns],
-                        use_container_width=True,
-                    )
+                    # Display results with filtering info
+                    if len(filtered_summary) > 0:
+                        st.success(f"✅ Found {len(filtered_summary)} high-risk customers out of {len(customer_summary)} total flagged customers")
+                        st.dataframe(
+                            filtered_summary[summary_display_columns],
+                            use_container_width=True,
+                        )
+                        
+                        # Add download option for filtered results
+                        csv_data = filtered_summary[summary_display_columns].to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download High-Risk Customers CSV",
+                            data=csv_data,
+                            file_name=f"high_risk_customers_{min_zscore}z_{min_percentile}p.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.warning(f"⚠️ No customers meet the criteria (min {min_flagged_txns} transactions, Z-score ≥ {min_zscore}, percentile ≥ {min_percentile}%, amount ≥ ${min_flagged_amount:,.0f}, risk score ≥ {min_risk_score})")
+                        st.info(f"💡 Total customers with any flagged transactions: {len(customer_summary)}")
+                        
+                        # Show summary statistics
+                        if len(customer_summary) > 0:
+                            st.write("**Summary of all flagged customers:**")
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total Flagged Customers", len(customer_summary))
+                            with col2:
+                                st.metric("Max Z-score", f"{customer_summary['max_zscore'].max():.2f}")
+                            with col3:
+                                st.metric("Max Percentile", f"{customer_summary['max_percentile'].max():.1f}%")
+                            with col4:
+                                st.metric("Max Amount", f"${customer_summary['total_flagged_amount'].max():,.0f}")
+                            
+                            # Show distribution
+                            st.write("**💡 Try lowering the filter thresholds above to see more customers**")
 
                 else:
                     st.subheader("🧑‍💼 Customer-level AML Summary")
@@ -777,8 +1095,479 @@ with tab2:
     else:
         st.info("Please upload a transaction CSV file in the EDA tab first.")
 
+
+
 with tab3:
-    st.header("🤖 LLM Investigator")
+    st.header("👥 Beneficiary Analysis")
+    st.markdown(
+        """
+    This section identifies beneficiaries who receive funds from multiple customers, which can be an indicator of mule activity or other financial irregularities.
+    """
+    )
+    uploaded_file = st.session_state.get("uploaded_file", None)
+    if uploaded_file is not None:
+        try:
+            df = st.session_state.get("processed_df", None)
+            if df is None:
+                st.info("Please upload a transaction CSV file in the EDA tab first.")
+                st.stop()
+
+            if "beneficiary_name" not in df.columns:
+                st.warning("Beneficiary name column not found in the uploaded file.")
+            else:
+                # Add filters
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    min_txn = st.number_input("Minimum Transactions", 1, 100, 1)
+                with col2:
+                    min_unique_senders = st.number_input("Minimum Unique Senders", 1, 100, 1)
+                with col3:
+                    min_total_received_amount = st.number_input("Minimum Total Received Amount", 0.0, 10000000.0, 0.0, step=1000.0)
+
+                # Handle nationality filtering with error checking
+                try:
+                    if 'nationality' in df.columns:
+                        # Clean nationality data - convert all to strings and handle NaN
+                        df['nationality'] = df['nationality'].fillna('Unknown').astype(str)
+                        nationalities = sorted([str(n) for n in df['nationality'].unique() if str(n) != 'nan'])
+                        if not nationalities:
+                            nationalities = ['Unknown']
+                    else:
+                        # Create default nationality if column doesn't exist
+                        df['nationality'] = 'Unknown'
+                        nationalities = ['Unknown']
+                    
+                    selected_nationalities = st.multiselect("Nationalities", nationalities, default=nationalities)
+                except Exception as e:
+                    st.warning(f"Issue with nationality filtering: {e}. Using all data.")
+                    df['nationality'] = 'Unknown'
+                    nationalities = ['Unknown']
+                    selected_nationalities = ['Unknown']
+
+                # Filter original DataFrame based on selected nationalities
+                try:
+                    if selected_nationalities:
+                        df_filtered_by_nationality = df[df['nationality'].isin(selected_nationalities)].copy()
+                    else:
+                        df_filtered_by_nationality = df.copy()
+                except Exception as e:
+                    st.warning(f"Filtering by nationality failed: {e}. Using all data.")
+                    df_filtered_by_nationality = df.copy()
+
+                # Beneficiary Analysis with improved error handling
+                try:
+                    # Step 1: Automatic name consolidation for whitespace/case variations
+                    st.subheader("🔧 Automatic Name Consolidation")
+                    
+                    # Create normalized name mapping
+                    def normalize_name(name):
+                        """Normalize name by removing extra spaces and converting to uppercase"""
+                        if pd.isna(name) or not isinstance(name, str):
+                            return ""
+                        # Remove extra spaces and convert to uppercase
+                        return ' '.join(name.upper().split())
+                    
+                    # Create mapping of original names to normalized names
+                    all_beneficiary_names = df_filtered_by_nationality['beneficiary_name'].dropna().unique()
+                    name_groups = {}
+                    normalized_to_canonical = {}
+                    
+                    # Group names by their normalized form
+                    for name in all_beneficiary_names:
+                        normalized = normalize_name(name)
+                        if normalized:
+                            if normalized not in name_groups:
+                                name_groups[normalized] = []
+                            name_groups[normalized].append(name)
+                    
+                    # Find groups with multiple variations and select canonical names
+                    consolidated_groups = []
+                    total_consolidations = 0
+                    
+                    for normalized, variations in name_groups.items():
+                        if len(variations) > 1:
+                            # Sort by length (prefer shorter, cleaner names) then alphabetically
+                            canonical_name = sorted(variations, key=lambda x: (len(x), x))[0]
+                            consolidated_groups.append({
+                                'Canonical Name': canonical_name,
+                                'Variations': variations,
+                                'Count': len(variations)
+                            })
+                            total_consolidations += len(variations) - 1
+                            
+                            # Map all variations to canonical name
+                            for variation in variations:
+                                normalized_to_canonical[variation] = canonical_name
+                        else:
+                            # Single name, maps to itself
+                            normalized_to_canonical[variations[0]] = variations[0]
+                    
+                    # Show consolidation summary
+                    if consolidated_groups:
+                        st.success(f"✅ Found {len(consolidated_groups)} groups with name variations. Consolidated {total_consolidations} duplicate entries.")
+                        
+                        # Show consolidation details in an expander
+                        with st.expander(f"📋 View {len(consolidated_groups)} Consolidated Groups"):
+                            consolidation_df = pd.DataFrame(consolidated_groups)
+                            
+                            # Create detailed view showing all variations
+                            detailed_data = []
+                            for group in consolidated_groups:
+                                canonical = group['Canonical Name']
+                                for i, variation in enumerate(group['Variations']):
+                                    detailed_data.append({
+                                        'Canonical Name': canonical if i == 0 else '',
+                                        'Variation': variation,
+                                        'Status': 'Main' if variation == canonical else 'Consolidated'
+                                    })
+                            
+                            detailed_df = pd.DataFrame(detailed_data)
+                            st.dataframe(detailed_df, use_container_width=True)
+                    else:
+                        st.info("ℹ️ No name variations found - all beneficiary names are already unique.")
+                    
+                    # Step 2: Apply consolidation to the data
+                    df_consolidated = df_filtered_by_nationality.copy()
+                    df_consolidated['beneficiary_name_original'] = df_consolidated['beneficiary_name']
+                    df_consolidated['beneficiary_name'] = df_consolidated['beneficiary_name'].map(
+                        lambda x: normalized_to_canonical.get(x, x)
+                    )
+                    
+                    # Step 3: Create beneficiary summary with consolidated names
+                    # Simplified aggregation to avoid complex lambda functions
+                    beneficiary_summary = (
+                        df_consolidated.groupby("beneficiary_name")
+                        .agg(
+                            total_received=("amount", "sum"),
+                            transaction_count=("amount", "count"),
+                            distinct_senders=("customer_no", "nunique"),
+                        )
+                        .reset_index()
+                    )
+                    
+                    # Add self-transfer calculations separately to avoid complex lambda issues
+                    if 'is_self_transfer' in df_consolidated.columns:
+                        try:
+                            self_transfers = df_consolidated[df_consolidated['is_self_transfer'] == True]
+                            self_transfer_summary = (
+                                self_transfers.groupby("beneficiary_name")
+                                .agg(
+                                    self_transfer_amount=("amount", "sum"),
+                                    self_transfer_count=("amount", "count"),
+                                )
+                                .reset_index()
+                            )
+                            beneficiary_summary = beneficiary_summary.merge(
+                                self_transfer_summary, 
+                                on="beneficiary_name", 
+                                how="left"
+                            )
+                            beneficiary_summary['self_transfer_amount'] = beneficiary_summary['self_transfer_amount'].fillna(0)
+                            beneficiary_summary['self_transfer_count'] = beneficiary_summary['self_transfer_count'].fillna(0)
+                        except Exception as e:
+                            st.warning(f"Self-transfer calculation failed: {e}. Skipping self-transfer metrics.")
+                            beneficiary_summary['self_transfer_amount'] = 0
+                            beneficiary_summary['self_transfer_count'] = 0
+                    else:
+                        beneficiary_summary['self_transfer_amount'] = 0
+                        beneficiary_summary['self_transfer_count'] = 0
+
+                except Exception as e:
+                    st.error(f"Error in beneficiary analysis: {e}")
+                    st.stop()
+
+                # Apply filters
+                filtered_beneficiaries = beneficiary_summary[
+                    (beneficiary_summary["transaction_count"] >= min_txn) &
+                    (beneficiary_summary["distinct_senders"] >= min_unique_senders) &
+                    (beneficiary_summary["total_received"] >= min_total_received_amount)
+                ]
+
+                st.subheader("Beneficiaries Receiving from Multiple Senders")
+                st.dataframe(filtered_beneficiaries)
+
+                # Further analysis on suspicious beneficiaries
+                if not filtered_beneficiaries.empty:
+                    selected_beneficiary = st.selectbox(
+                        "Select a beneficiary to see transaction details:",
+                        options=filtered_beneficiaries["beneficiary_name"],
+                    )
+
+                    if selected_beneficiary:
+                        st.subheader(
+                            f"Transaction Details for {selected_beneficiary}"
+                        )
+                        beneficiary_transactions = df_consolidated[
+                            df_consolidated["beneficiary_name"] == selected_beneficiary
+                        ]
+                        
+                        # Show both original and consolidated names
+                        if 'beneficiary_name_original' in beneficiary_transactions.columns:
+                            original_names = beneficiary_transactions['beneficiary_name_original'].unique()
+                            if len(original_names) > 1:
+                                st.info(f"📝 This consolidated beneficiary includes these name variations: {', '.join(original_names)}")
+                        
+                        st.dataframe(beneficiary_transactions)
+
+                        # Charts with error handling
+                        try:
+                            st.subheader("Transaction Analysis")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.subheader("Transaction Amount Over Time")
+                                beneficiary_transactions['day_month'] = beneficiary_transactions['createdDateTime'].dt.strftime('%d %B')
+                                daily_summary = beneficiary_transactions.groupby('day_month')['amount'].sum().reset_index()
+                                # Create a sortable date column for correct chronological order
+                                daily_summary['sort_date'] = pd.to_datetime(daily_summary['day_month'], format='%d %B')
+                                daily_summary = daily_summary.sort_values(by='sort_date')
+                                fig = px.bar(daily_summary, x="day_month", y="amount", title="Transaction Amount Over Time")
+                                st.plotly_chart(fig)
+                            with col2:
+                                st.subheader("Total Amount by Nationality")
+                                # Group by nationality and sum amount, also count transactions
+                                if 'nationality' in beneficiary_transactions.columns:
+                                    nationality_summary = beneficiary_transactions.groupby('nationality').agg(
+                                        total_amount=('amount', 'sum'),
+                                        transaction_count=('amount', 'count')
+                                    ).reset_index()
+                                    fig = px.pie(
+                                        nationality_summary,
+                                        values='total_amount',
+                                        names='nationality',
+                                        title='Total Amount by Nationality',
+                                        hover_data=['transaction_count']
+                                    )
+                                    st.plotly_chart(fig)
+                                else:
+                                    st.info("Nationality data not available for this beneficiary.")
+                        except Exception as e:
+                            st.warning(f"Error creating charts: {e}")
+
+                        # Cycle Detection with error handling
+                        try:
+                            st.subheader("Cyclic Transactions")
+                            G = nx.from_pandas_edgelist(df_consolidated, "customer_no", "beneficiary_name", create_using=nx.DiGraph())
+                            cycles = list(nx.simple_cycles(G))
+                            beneficiary_cycles = [cycle for cycle in cycles if selected_beneficiary in cycle]
+                            if beneficiary_cycles:
+                                st.write("Found the following cycles:")
+                                for cycle in beneficiary_cycles:
+                                    st.write(cycle)
+                            else:
+                                st.write("No cycles found for this beneficiary.")
+                        except Exception as e:
+                            st.warning(f"Error in cycle detection: {e}")
+
+                # New Beneficiary Name Matching & Consolidation Section
+                st.markdown("---")
+                st.subheader("🔍 Advanced Beneficiary Name Matching & Consolidation")
+                st.markdown("""
+                This section provides advanced fuzzy matching to identify beneficiaries with similar names beyond basic case/whitespace variations.
+                It handles scenarios like hashed names, different word orders, and partial names.
+                """)
+
+                # Examples section
+                with st.expander("📝 See Examples of Advanced Name Matching"):
+                    st.markdown("""
+                    **Advanced matching scenarios (beyond the automatic consolidation above):**
+                    
+                    **1. 🔒 Hashed/Masked Names:**
+                    - `AAMA#########VEED` ➔ `AAMA#####VEED` ➔ `AAMAR NAVEED`
+                    - *Matches based on first 4 and last 4 letters*
+                    
+                    **2. 🔄 Different Word Order:**
+                    - `VICTOR JOHNNY IBANGA` ➔ `IBANGA VICTOR JOHNNY` ➔ `VICTOR IBANGA JOHNNY`
+                    - *Same words in different sequence*
+                    
+                    **3. ✂️ Partial Names:**
+                    - `VICTOR IBANGA JOHNNY` ➔ `VICTOR IBANGA` ➔ `VICTOR JOHNNY`
+                    - *Full name vs first+last or first+middle combinations*
+                    """)
+
+                # Name matching controls with error handling
+                try:
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        # Input for beneficiary name search (now using consolidated names)
+                        all_beneficiary_names = [str(name) for name in df_consolidated['beneficiary_name'].unique() if pd.notna(name)]
+                        search_input = st.text_input(
+                            "🔎 Enter beneficiary name to find similar matches:",
+                            placeholder="Type a beneficiary name...",
+                            help="Enter a beneficiary name to find all similar variations"
+                        )
+
+                    with col2:
+                        similarity_threshold = st.slider(
+                            "Similarity Threshold (%)",
+                            min_value=50,
+                            max_value=95,
+                            value=70,
+                            step=1,
+                            help="Adjust the similarity threshold - higher values require closer matches"
+                        )
+
+                    # Determine which name to search for
+                    target_name = search_input.strip()
+
+                    if target_name:
+                        st.markdown(f"### 🎯 Finding matches for: **{target_name}**")
+                        
+                        # Find similar names
+                        similar_names = find_similar_names(target_name, all_beneficiary_names, similarity_threshold)
+                        
+                        if similar_names:
+                            # Create consolidated view
+                            st.subheader("✅ Similar Names Found & Breakdown")
+                            
+                            # Prepare data for the consolidated table
+                            consolidated_data = []
+                            total_consolidated_amount = 0
+                            total_consolidated_transactions = 0
+                            total_consolidated_senders = set()
+                            
+                            # Include the target name itself
+                            all_matching_names = [target_name] + [item['name'] for item in similar_names]
+                            
+                            # Calculate consolidated statistics and create merged table
+                            merged_table_data = []
+                            
+                            # Add target name first
+                            target_transactions = df_consolidated[df_consolidated['beneficiary_name'] == target_name]
+                            if not target_transactions.empty:
+                                target_total = target_transactions['amount'].sum()
+                                target_count = len(target_transactions)
+                                target_senders = set(target_transactions['customer_no'].unique())
+                                
+                                merged_table_data.append({
+                                    'Beneficiary Name': target_name,
+                                    'Similarity Score (%)': 100.0,
+                                    'Match Type': 'Original',
+                                    'Total Amount': f"${target_total:,.2f}",
+                                    'Transaction Count': target_count,
+                                    'Unique Senders': len(target_senders)
+                                })
+                                
+                                total_consolidated_amount += target_total
+                                total_consolidated_transactions += target_count
+                                total_consolidated_senders.update(target_senders)
+                            
+                            # Add similar names
+                            for item in similar_names:
+                                name = item['name']
+                                similarity = item['similarity']
+                                name_transactions = df_consolidated[df_consolidated['beneficiary_name'] == name]
+                                
+                                if not name_transactions.empty:
+                                    name_total = name_transactions['amount'].sum()
+                                    name_count = len(name_transactions)
+                                    name_senders = set(name_transactions['customer_no'].unique())
+                                    
+                                    merged_table_data.append({
+                                        'Beneficiary Name': name,
+                                        'Similarity Score (%)': similarity,
+                                        'Match Type': 'Similar',
+                                        'Total Amount': f"${name_total:,.2f}",
+                                        'Transaction Count': name_count,
+                                        'Unique Senders': len(name_senders)
+                                    })
+                                    
+                                    total_consolidated_amount += name_total
+                                    total_consolidated_transactions += name_count
+                                    total_consolidated_senders.update(name_senders)
+                                else:
+                                    # Include names with no transactions for completeness
+                                    merged_table_data.append({
+                                        'Beneficiary Name': name,
+                                        'Similarity Score (%)': similarity,
+                                        'Match Type': 'Similar',
+                                        'Total Amount': "$0.00",
+                                        'Transaction Count': 0,
+                                        'Unique Senders': 0
+                                    })
+                            
+                            # Display merged table
+                            merged_df = pd.DataFrame(merged_table_data)
+                            # Sort by similarity score descending
+                            merged_df = merged_df.sort_values('Similarity Score (%)', ascending=False)
+                            st.dataframe(merged_df, use_container_width=True)
+                            
+                            # Display consolidated totals
+                            st.subheader("🎯 Consolidated Summary")
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                st.metric(
+                                    "Total Consolidated Amount",
+                                    f"${total_consolidated_amount:,.2f}",
+                                    help="Sum of all amounts across all similar names"
+                                )
+                            
+                            with col2:
+                                st.metric(
+                                    "Total Transactions",
+                                    f"{total_consolidated_transactions:,}",
+                                    help="Total number of transactions across all similar names"
+                                )
+                            
+                            with col3:
+                                st.metric(
+                                    "Unique Senders",
+                                    f"{len(total_consolidated_senders):,}",
+                                    help="Number of unique senders across all similar names"
+                                )
+                            
+                            with col4:
+                                average_per_transaction = total_consolidated_amount / total_consolidated_transactions if total_consolidated_transactions > 0 else 0
+                                st.metric(
+                                    "Average per Transaction",
+                                    f"${average_per_transaction:,.2f}",
+                                    help="Average transaction amount across consolidated names"
+                                )
+                            
+                            # Show all consolidated transactions
+                            if st.checkbox("📋 Show All Consolidated Transactions"):
+                                all_consolidated_transactions = df_consolidated[
+                                    df_consolidated['beneficiary_name'].isin(all_matching_names)
+                                ].copy()
+                                
+                                # Add similarity score column
+                                all_consolidated_transactions['Name_Similarity_Score'] = all_consolidated_transactions['beneficiary_name'].apply(
+                                    lambda x: 100.0 if x == target_name else next(
+                                        (item['similarity'] for item in similar_names if item['name'] == x), 0
+                                    )
+                                )
+                                
+                                # Sort by similarity score descending, then by amount descending
+                                all_consolidated_transactions = all_consolidated_transactions.sort_values(
+                                    ['Name_Similarity_Score', 'amount'], ascending=[False, False]
+                                )
+                                
+                                st.dataframe(all_consolidated_transactions, use_container_width=True)
+                                
+                                # Download option
+                                csv_data = all_consolidated_transactions.to_csv(index=False)
+                                st.download_button(
+                                    label="💾 Download Consolidated Transactions",
+                                    data=csv_data,
+                                    file_name=f"consolidated_transactions_{target_name.replace(' ', '_')}.csv",
+                                    mime="text/csv"
+                                )
+                        
+                        else:
+                            st.info(f"No similar names found for '{target_name}' with similarity threshold of {similarity_threshold}%")
+                            st.markdown("💡 **Try lowering the similarity threshold or check spelling**")
+
+                except Exception as e:
+                    st.error(f"Error in name matching section: {e}")
+                    st.markdown("💡 **Try refreshing the page or check your data format**")
+
+        except Exception as e:
+            st.error(f"Error processing the uploaded file: {e}")
+            st.markdown("💡 **Please check your CSV file format and ensure all required columns are present**")
+    else:
+        st.info("Please upload a transaction CSV file in the EDA tab first.")
+
+with tab5:
     st.markdown(
         """
     This tool uses a Retrieval-Augmented Generation (RAG) approach: it extracts transaction data for a customer and asks a Large Language Model (LLM) to analyze potential AML risks based on the transaction patterns.
@@ -805,9 +1594,10 @@ with tab3:
     if uploaded_file is None:
         st.info("Please upload a transaction CSV file in the EDA tab first.")
     else:
-        uploaded_file.seek(0)
-        # Read CSV with customer_no as string to prevent comma formatting
-        df = pd.read_csv(uploaded_file, dtype={"customer_no": str})
+        df = st.session_state.get("processed_df", None)
+        if df is None:
+            st.info("Please upload a transaction CSV file in the EDA tab first.")
+            st.stop()
         # Hash customer numbers for privacy
         df["customer_no_hashed"] = df["customer_no"].apply(hash_value)
         df["beneficiary_name_hashed"] = df["beneficiary_name"].apply(hash_value)
@@ -1088,8 +1878,7 @@ with tab4:
             "📁 Please upload a CSV file with hashed customer IDs to begin the lookup process."
         )
 
-with tab5:
-    st.header("ℹ️ Model Information")
+with tab6:
     st.markdown(
         """
     This AML Dashboard implements a comprehensive multi-layered approach to detect and analyze suspicious financial transactions. Here's an overview of our current methodology:
@@ -1116,31 +1905,39 @@ with tab5:
     - **Behavioral Stories**: Creates narrative summaries of customer transaction patterns
     - **Transaction Networks**: Visualizes customer connections and identifies potential laundering rings
 
-    **🌐 5. Network Analysis & Graph Theory**
+    **🔗 5. Beneficiary Name Matching & Consolidation**
+    - **Intelligent Name Matching**: Advanced fuzzy matching to identify similar beneficiary names
+    - **Multi-Scenario Handling**: Detects hashed names, word order variations, partial names, and case differences
+    - **Similarity Scoring**: Adjustable threshold-based matching with confidence scores
+    - **Consolidated Analytics**: Aggregates transactions across all name variations
+    - **Risk Assessment**: Evaluates consolidated beneficiary profiles for suspicious activity
+    - **Pattern Detection**: Identifies potential name obfuscation and evasion techniques
+
+    **🌐 6. Network Analysis & Graph Theory**
     - **Transaction Networks**: Builds directed graphs showing money flow between customers
     - **Cycle Detection**: Identifies circular transaction patterns (potential laundering rings)
     - **Hub Detection**: Finds customers with unusually high transaction volumes
     - **Interactive Visualization**: Compact graph display with node labels showing transaction counts
 
-    **🤖 6. Graph RAG (Retrieval-Augmented Generation)**
+    **🤖 7. Graph RAG (Retrieval-Augmented Generation)**
     - **LLM-Powered Analysis**: Uses GPT-4o for intelligent transaction pattern analysis
     - **Risk Assessment**: Provides color-coded risk levels (RED=HIGH, GREEN=LOW, BLUE=MEDIUM)
     - **Concise Insights**: Delivers exactly 4 key bullet points with actionable recommendations
     - **Context-Aware**: Analyzes specific customer transaction histories for targeted insights
 
-    **📈 7. Advanced Analytics & Visualization**
+    **📈 8. Advanced Analytics & Visualization**
     - **Pie Charts**: Transaction count and sum distribution by transfer type
     - **Stacked Bar Charts**: Daily transaction amounts with hover details
     - **Network Graphs**: Interactive customer transaction networks with cycle highlighting
     - **Statistical Summaries**: Comprehensive transaction statistics and risk metrics
 
-    **🔐 8. Privacy & Security Features**
+    **🔐 9. Privacy & Security Features**
     - **Data Hashing**: SHA-256 hashing of all customer identifiers
     - **Reversible Lookup**: Customer ID lookup tool for investigator access
     - **Session Management**: Secure data handling across tabs
     - **Audit Trail**: Complete transaction history preservation
 
-    **📋 9. Investigator Tools**
+    **📋 10. Investigator Tools**
     - **Customer ID Lookup**: Reverse hashing for flagged customer investigation
     - **Export Capabilities**: Download results in CSV format
     - **Multi-tab Interface**: Organized workflow across EDA, Detection, RAG, and Lookup
@@ -1153,12 +1950,14 @@ with tab5:
     - **Actionable Insights**: Prioritized risk assessment with specific recommendations
     - **Scalable Architecture**: Handles large transaction datasets efficiently
     - **User-Friendly**: Intuitive interface for both technical and non-technical users
+    - **Advanced Name Matching**: Intelligent beneficiary consolidation across name variations
 
     **🔬 Technical Stack:**
     - **Machine Learning**: Scikit-learn (Isolation Forest, StandardScaler)
     - **Graph Analysis**: NetworkX for transaction network modeling
     - **Visualization**: Plotly for interactive charts, Matplotlib for network graphs
     - **LLM Integration**: OpenAI GPT-4o for intelligent analysis
+    - **Fuzzy Matching**: TheFuzz library for advanced name similarity detection
     - **Web Framework**: Streamlit for responsive web interface
     - **Data Processing**: Pandas for efficient data manipulation
     """

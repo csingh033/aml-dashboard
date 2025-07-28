@@ -24,6 +24,13 @@ A comprehensive Anti-Money Laundering (AML) dashboard built with Streamlit, feat
 - **Pattern Recognition**: Temporal and volume analysis
 - **Data Quality Assessment**: Comprehensive data validation
 
+### 👥 **Beneficiary Name Matching & Consolidation** 
+- **Intelligent Name Matching**: Advanced fuzzy matching to identify similar beneficiary names
+- **Multi-Scenario Handling**: Detects hashed names, word order variations, partial names, and case differences
+- **Similarity Scoring**: Adjustable threshold-based matching with confidence scores
+- **Consolidated Analytics**: Aggregates transactions across all name variations for comprehensive analysis
+- **Risk Assessment**: Evaluates consolidated beneficiary profiles for suspicious activity patterns
+
 ### 🔐 **Privacy & Security**
 - **Data Hashing**: SHA-256 encryption of customer identifiers
 - **Local Deployment**: All data stays on your machine
@@ -71,9 +78,10 @@ streamlit run app.py
 
 1. **📊 EDA Tab**: Exploratory data analysis with interactive charts
 2. **💼 AML Dashboard**: Main anomaly detection and analysis
-3. **🤖 LLM Investigator**: AI-powered transaction analysis
-4. **🔍 Customer ID Lookup**: Reverse hashing for investigation
-5. **ℹ️ Model Information**: Methodology and technical details
+3. **👥 Beneficiary Analysis**: Name matching, consolidation, and suspicious beneficiary detection
+4. **🤖 LLM Investigator**: AI-powered transaction analysis
+5. **🔍 Customer ID Lookup**: Reverse hashing for investigation
+6. **ℹ️ Model Information**: Methodology and technical details
 
 ### **Technical Stack**
 

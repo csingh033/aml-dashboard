@@ -33,9 +33,9 @@ if ($LASTEXITCODE -eq 0) {
 
 # Step 4: Run the dashboard
 Write-Host "`n🚀 Step 4: Starting the AML Dashboard..." -ForegroundColor Yellow
-Write-Host "The dashboard will be available at: http://localhost:8501" -ForegroundColor Cyan
+Write-Host "The dashboard will be available at: http://localhost:8502" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop the dashboard when needed." -ForegroundColor Cyan
 Write-Host "`nStarting dashboard..." -ForegroundColor Green
 
-# Run the dashboard
-docker run -p 8501:8501 aml-dashboard 
+# Run the dashboard with correct port mapping
+docker run -p 8502:8501 aml-dashboard 
