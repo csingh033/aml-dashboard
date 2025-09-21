@@ -10,3 +10,5 @@ httpx==0.25.0
 python-dotenv==1.0.0
 pyvis==0.3.2
 thefuzz==0.22.1
+neo4j==5.14.0
+streamlit-agraph==0.0.45

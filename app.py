@@ -20,6 +20,9 @@ import plotly.graph_objects as go
 from thefuzz import fuzz
 from itertools import combinations
 import re
+from neo4j_fraud_rings import Neo4jFraudDetector, create_beneficiary_consolidation_map
+import json
+from datetime import datetime
 
 # Make hash_value globally available
 
@@ -207,7 +210,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         "💼 AML Dashboard",
         "👥 Beneficiary Analysis",
         "🤖 LLM Investigator",
-        "🔍 Customer ID Lookup",
+        "🕸️ Neo4j Fraud Rings",
         "ℹ️ Model Information",
     ]
 )
@@ -1567,7 +1570,7 @@ with tab3:
     else:
         st.info("Please upload a transaction CSV file in the EDA tab first.")
 
-with tab5:
+with tab4:
     st.markdown(
         """
     This tool uses a Retrieval-Augmented Generation (RAG) approach: it extracts transaction data for a customer and asks a Large Language Model (LLM) to analyze potential AML risks based on the transaction patterns.
@@ -1754,129 +1757,12 @@ with tab5:
         else:
             st.info("Please select a customer to analyze.")
 
-with tab4:
-    st.header("🔍 Customer ID Lookup")
-    st.markdown(
-        """
-    Upload a CSV file containing customer IDs to get detailed information about customers.
-    This tool helps investigators retrieve customer details for flagged transactions.
-    
-    **Required CSV format:** The file should have a column named 'customer_no_hashed' containing the customer numbers.
-    """
-    )
-
-    # Check if we have processed data from the main dashboard
-    if "uploaded_file" in st.session_state and "processed_df" not in st.session_state:
-        # Process the original data and store it for lookup
-        uploaded_file = st.session_state["uploaded_file"]
-        uploaded_file.seek(0)
-        # Read CSV with customer_no as string to prevent comma formatting
-        df = pd.read_csv(uploaded_file, dtype={"customer_no": str})
-
-        # Create a mapping of hashed to original customer numbers
-        customer_mapping = {}
-        for _, row in df.iterrows():
-            customer_id = row["customer_no"]
-            if customer_id not in customer_mapping:
-                customer_mapping[customer_id] = {
-                    "original_customer_no": row["customer_no"],
-                    "original_customer_name": row["CustomerName"],
-                    "total_transactions": len(
-                        df[df["customer_no"] == row["customer_no"]]
-                    ),
-                }
-
-        st.session_state["customer_mapping"] = customer_mapping
-        st.session_state["processed_df"] = df
-        st.success("✅ Customer mapping created from uploaded data!")
-
-    # File upload for customer ID lookup
-    lookup_file = st.file_uploader(
-        "Upload CSV with hashed customer IDs", type="csv", key="lookup_uploader"
-    )
-
-    if lookup_file is not None:
-        try:
-            lookup_df = pd.read_csv(lookup_file)
-
-            if "customer_no_hashed" not in lookup_df.columns:
-                st.error(
-                    "❌ The uploaded CSV must contain a column named 'customer_no_hashed'"
-                )
-            else:
-                st.success(f"✅ Found {len(lookup_df)} hashed customer IDs to lookup")
-
-                # Get customer mapping if available
-                customer_mapping = st.session_state.get("customer_mapping", {})
-
-                if not customer_mapping:
-                    st.warning(
-                        "⚠️ No customer mapping available. Please upload transaction data in the AML Dashboard tab first."
-                    )
-                else:
-                    # Lookup results
-                    results = []
-                    found_count = 0
-
-                    for _, row in lookup_df.iterrows():
-                        customer_id = str(row["customer_no_hashed"])
-                        if customer_id in customer_mapping:
-                            mapping = customer_mapping[customer_id]
-                            results.append(
-                                {
-                                    "customer_no": customer_id,
-                                    "original_customer_no": mapping[
-                                        "original_customer_no"
-                                    ],
-                                    "original_customer_name": mapping[
-                                        "original_customer_name"
-                                    ],
-                                    "total_transactions": mapping["total_transactions"],
-                                }
-                            )
-                            found_count += 1
-                        else:
-                            results.append(
-                                {
-                                    "customer_no": customer_id,
-                                    "original_customer_no": "NOT FOUND",
-                                    "original_customer_name": "NOT FOUND",
-                                    "total_transactions": 0,
-                                }
-                            )
-
-                    # Display results
-                    results_df = pd.DataFrame(results)
-                    st.subheader(
-                        f"🔍 Lookup Results ({found_count}/{len(lookup_df)} found)"
-                    )
-                    st.dataframe(results_df, use_container_width=True)
-
-                    # Download results
-                    csv = results_df.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        "Download Lookup Results as CSV",
-                        csv,
-                        "customer_lookup_results.csv",
-                        "text/csv",
-                        key="download-lookup-csv",
-                    )
-
-                    # Show statistics
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Lookups", len(lookup_df))
-                    with col2:
-                        st.metric("Found", found_count)
-                    with col3:
-                        st.metric("Not Found", len(lookup_df) - found_count)
-
-        except Exception as e:
-            st.error(f"❌ Error processing the uploaded file: {str(e)}")
-    else:
-        st.info(
-            "📁 Please upload a CSV file with hashed customer IDs to begin the lookup process."
-        )
+# Customer ID Lookup tab has been hidden as requested
+# with tab4:
+#     st.header("🔍 Customer ID Lookup")
+# Customer ID Lookup content has been hidden as requested
+# The entire tab content has been commented out
+pass
 
 with tab6:
     st.markdown(
@@ -1962,3 +1848,527 @@ with tab6:
     - **Data Processing**: Pandas for efficient data manipulation
     """
     )
+
+with tab5:
+    st.header("🕸️ Neo4j Fraud Ring Detection")
+    
+    # Check if data is available
+    uploaded_file = st.session_state.get("uploaded_file", None)
+    if uploaded_file is None:
+        st.info("Please upload a transaction CSV file in the EDA tab first.")
+    else:
+        df = st.session_state.get("processed_df", None)
+        if df is None:
+            st.info("Please upload a transaction CSV file in the EDA tab first.")
+            st.stop()
+        
+        # Neo4j Connection Configuration
+        st.subheader("🔌 Neo4j Connection")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            neo4j_uri = st.text_input(
+                "Neo4j URI", 
+                value=st.session_state.get('neo4j_uri', 'neo4j://localhost:7687'),
+                help="Neo4j database URI (e.g., neo4j://localhost:7687)"
+            )
+        
+        with col2:
+            neo4j_user = st.text_input(
+                "Username", 
+                value=st.session_state.get('neo4j_user', 'neo4j'),
+                help="Neo4j database username"
+            )
+        
+        with col3:
+            neo4j_password = st.text_input(
+                "Password", 
+                type="password",
+                help="Neo4j database password"
+            )
+        
+        # Connection management
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔌 Connect to Neo4j", use_container_width=True):
+                if neo4j_password:
+                    try:
+                        detector = Neo4jFraudDetector(uri=neo4j_uri, user=neo4j_user, password=neo4j_password)
+                        if detector.connect():
+                            st.session_state['neo4j_detector'] = detector
+                            st.session_state['neo4j_connected'] = True
+                            st.session_state['neo4j_uri'] = neo4j_uri
+                            st.session_state['neo4j_user'] = neo4j_user
+                            st.success("✅ Successfully connected to Neo4j!")
+                        else:
+                            st.error("❌ Failed to connect to Neo4j. Please check your credentials.")
+                    except Exception as e:
+                        st.error(f"❌ Connection error: {str(e)}")
+                else:
+                    st.warning("⚠️ Please enter a password")
+        
+        with col2:
+            if st.button("🗑️ Clear Database", use_container_width=True):
+                if st.session_state.get('neo4j_connected', False):
+                    detector = st.session_state.get('neo4j_detector')
+                    if detector and detector.clear_database():
+                        st.success("✅ Database cleared successfully!")
+                    else:
+                        st.error("❌ Failed to clear database")
+                else:
+                    st.warning("⚠️ Please connect to Neo4j first")
+        
+        # Show connection status
+        if st.session_state.get('neo4j_connected', False):
+            st.success("🔗 Connected to Neo4j")
+        else:
+            st.warning("⚠️ Not connected to Neo4j. Please connect first to use advanced features.")
+        
+        st.divider()
+        
+        # Enhanced fraud ring detection with Neo4j integration
+        st.subheader("👥 Beneficiary Consolidation Settings")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            use_consolidation = st.checkbox(
+                "Use Beneficiary Name Consolidation", 
+                value=True,
+                help="Apply intelligent name matching to group similar beneficiary names"
+            )
+        
+        with col2:
+            if use_consolidation:
+                similarity_threshold = st.slider(
+                    "Name Similarity Threshold (%)",
+                    min_value=50,
+                    max_value=95,
+                    value=70,
+                    help="Higher values require closer name matches"
+                )
+            else:
+                similarity_threshold = 70
+        
+        # Analysis Section
+        st.subheader("🚀 Fraud Ring Analysis")
+        
+        analysis_mode = st.radio(
+            "Analysis Mode",
+            ["Quick Analysis (Pandas)", "Advanced Analysis (Neo4j)"],
+            help="Quick mode uses pandas for speed, Neo4j mode provides advanced graph analysis and interactive visualizations"
+        )
+        
+        if st.button("🕵️ Build Fraud Graph & Detect Rings", use_container_width=True):
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            try:
+                # Check Neo4j connection requirement
+                if analysis_mode == "Advanced Analysis (Neo4j)" and not st.session_state.get('neo4j_connected', False):
+                    st.error("❌ Neo4j connection required for advanced analysis. Please connect first.")
+                    st.stop()
+                
+                # Create beneficiary consolidation map
+                status_text.info("👥 Creating beneficiary consolidation map...")
+                consolidation_map = None
+                if use_consolidation:
+                    consolidation_map = create_beneficiary_consolidation_map(df, similarity_threshold)
+                
+                progress_bar.progress(20)
+                
+                if analysis_mode == "Advanced Analysis (Neo4j)":
+                    # Neo4j Analysis Path
+                    detector = st.session_state.get('neo4j_detector')
+                    
+                    status_text.info("🏗️ Building Neo4j fraud graph...")
+                    detector.create_constraints_and_indexes()
+                    success = detector.build_fraud_graph(df, consolidation_map)
+                    
+                    if not success:
+                        st.error("❌ Failed to build fraud graph")
+                        st.stop()
+                    
+                    progress_bar.progress(60)
+                    
+                    # Get network statistics
+                    status_text.info("📊 Calculating network statistics...")
+                    network_stats = detector.get_network_statistics()
+                    progress_bar.progress(70)
+                    
+                    # Detect fraud rings
+                    status_text.info("🕵️ Detecting fraud rings...")
+                    fraud_rings = detector.detect_fraud_rings(min_ring_size=3, max_rings=10)
+                    
+                    progress_bar.progress(100)
+                    status_text.text("✅ Neo4j analysis completed!")
+                    
+                    # Display Neo4j results
+                    st.divider()
+                    st.subheader("📈 Neo4j Network Statistics")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Senders", network_stats.get('total_senders', 'N/A'))
+                    with col2:
+                        st.metric("Total Beneficiaries", network_stats.get('total_beneficiaries', 'N/A'))
+                    with col3:
+                        st.metric("Total Relationships", network_stats.get('total_relationships', 'N/A'))
+                    with col4:
+                        st.metric("Fraud Rings Detected", len(fraud_rings))
+                    
+                    if fraud_rings:
+                        st.success(f"🎯 Neo4j detected {len(fraud_rings)} potential fraud rings!")
+                        
+                        for i, ring in enumerate(fraud_rings, 1):
+                            risk_level = "🔴 High" if ring['risk_score'] > 0.7 else "🟡 Medium" if ring['risk_score'] > 0.5 else "🟢 Low"
+                            
+                            with st.expander(f"{risk_level} Risk - {ring['type']} #{i} (Score: {ring['risk_score']:.3f})"):
+                                st.markdown(f"**Pattern:** {ring['pattern']}")
+                                
+                                if ring['type'] == 'Hub Pattern':
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.metric("Hub Beneficiary", ring.get('hub_name', 'Unknown'))
+                                        st.metric("Connected Senders", ring.get('sender_count', 0))
+                                    with col2:
+                                        st.metric("Total Amount", f"${ring.get('total_amount', 0):,.0f}")
+                                        st.metric("Risk Score", f"{ring['risk_score']:.3f}")
+                                
+                                elif ring['type'] == 'Rapid Fire':
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.metric("Sender", ring.get('sender_name', 'Unknown'))
+                                        st.metric("Beneficiary", ring.get('beneficiary_name', 'Unknown'))
+                                    with col2:
+                                        st.metric("Transaction Count", ring.get('transaction_count', 0))
+                                        st.metric("Total Amount", f"${ring.get('total_amount', 0):,.0f}")
+                    
+                        # Interactive Network Visualization
+                        st.subheader("🕸️ Interactive Network Visualization")
+                        
+                        if st.button("🎨 Generate Network Visualization", key="neo4j_viz"):
+                            with st.spinner("Creating interactive network visualization..."):
+                                try:
+                                    # Export data for visualization
+                                    viz_data = detector.export_fraud_rings_for_visualization(fraud_rings)
+                                    
+                                    if viz_data['nodes']:
+                                        # Create network visualization using Plotly
+                                        import math
+                                        
+                                        fig = go.Figure()
+                                        
+                                        # Simple circular layout for nodes
+                                        node_x = []
+                                        node_y = []
+                                        node_text = []
+                                        node_colors = []
+                                        node_sizes = []
+                                        
+                                        n_nodes = len(viz_data['nodes'])
+                                        for i, node in enumerate(viz_data['nodes']):
+                                            angle = 2 * math.pi * i / n_nodes if n_nodes > 1 else 0
+                                            x = math.cos(angle)
+                                            y = math.sin(angle)
+                                            
+                                            node_x.append(x)
+                                            node_y.append(y)
+                                            node_text.append(f"{node['label']}<br>Type: {node['type']}<br>Risk: {node['risk_score']:.2f}")
+                                            node_colors.append(node['color'])
+                                            node_sizes.append(node['size'])
+                                        
+                                        # Add edges
+                                        for edge in viz_data['edges']:
+                                            # Find node positions for this edge
+                                            from_idx = next((i for i, node in enumerate(viz_data['nodes']) if node['id'] == edge['from']), None)
+                                            to_idx = next((i for i, node in enumerate(viz_data['nodes']) if node['id'] == edge['to']), None)
+                                            
+                                            if from_idx is not None and to_idx is not None:
+                                                fig.add_trace(go.Scatter(
+                                                    x=[node_x[from_idx], node_x[to_idx]],
+                                                    y=[node_y[from_idx], node_y[to_idx]],
+                                                    mode='lines',
+                                                    line=dict(width=edge['width'], color=edge['color'], opacity=0.6),
+                                                    hoverinfo='none',
+                                                    showlegend=False
+                                                ))
+                                        
+                                        # Add nodes
+                                        fig.add_trace(go.Scatter(
+                                            x=node_x,
+                                            y=node_y,
+                                            mode='markers+text',
+                                            marker=dict(
+                                                size=node_sizes,
+                                                color=node_colors,
+                                                line=dict(width=2, color='white'),
+                                                opacity=0.8
+                                            ),
+                                            text=[node['label'] for node in viz_data['nodes']],
+                                            textposition="middle center",
+                                            hovertext=node_text,
+                                            hoverinfo='text',
+                                            showlegend=False,
+                                            textfont=dict(size=8)
+                                        ))
+                                        
+                                        fig.update_layout(
+                                            title="🕸️ Neo4j Fraud Ring Network - Interactive Visualization",
+                                            showlegend=False,
+                                            hovermode='closest',
+                                            margin=dict(b=20,l=5,r=5,t=40),
+                                            annotations=[dict(
+                                                text="Interactive Neo4j Network - Hover over nodes for details",
+                                                showarrow=False,
+                                                xref="paper", yref="paper",
+                                                x=0.005, y=-0.002,
+                                                xanchor='left', yanchor='bottom',
+                                                font=dict(color='gray', size=12)
+                                            )],
+                                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                                            height=600,
+                                            plot_bgcolor='rgba(0,0,0,0)',
+                                            paper_bgcolor='rgba(0,0,0,0)'
+                                        )
+                                        
+                                        st.plotly_chart(fig, use_container_width=True)
+                                        
+                                        # Legend
+                                        st.markdown("""
+                                        **🎨 Visualization Legend:**
+                                        - 🔴 Red nodes: High risk entities (risk score > 0.7)
+                                        - 🟢 Green nodes: Lower risk entities  
+                                        - Node size: Proportional to number of connections
+                                        - Line thickness: Proportional to transaction amounts
+                                        - Hover over nodes and lines for detailed information
+                                        """)
+                                    
+                                    else:
+                                        st.info("No visualization data available for the detected rings.")
+                                
+                                except Exception as e:
+                                    st.error(f"Error creating visualization: {str(e)}")
+                        
+                        # Export Neo4j Results
+                        st.subheader("💾 Export Neo4j Analysis")
+                        
+                        export_data = {
+                            'analysis_timestamp': datetime.now().isoformat(),
+                            'analysis_type': 'Neo4j Advanced Analysis',
+                            'analysis_parameters': {
+                                'use_consolidation': use_consolidation,
+                                'similarity_threshold': similarity_threshold,
+                                'min_ring_size': 3,
+                                'max_rings': 10
+                            },
+                            'network_statistics': network_stats,
+                            'fraud_rings': fraud_rings
+                        }
+                        
+                        json_data = json.dumps(export_data, indent=2, default=str)
+                        st.download_button(
+                            label="📥 Download Complete Neo4j Analysis (JSON)",
+                            data=json_data,
+                            file_name=f"neo4j_fraud_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            mime="application/json"
+                        )
+                    
+                    else:
+                        st.info("🔍 No fraud rings detected with current parameters. Try adjusting detection settings.")
+                
+                else:
+                    # Quick Pandas Analysis
+                    status_text.info("📊 Quick analysis using pandas...")
+                    
+                    # Basic stats
+                    total_transactions = len(df)
+                    unique_senders = df['customer_no'].nunique()
+                    unique_beneficiaries = df['beneficiary_name'].nunique()
+                    total_amount = df['amount'].sum()
+                    
+                    progress_bar.progress(40)
+                    status_text.info("👥 Processing beneficiary consolidation...")
+                    
+                    # Fast consolidation
+                    df_analysis = df.copy()
+                    if use_consolidation and consolidation_map:
+                        df_analysis['beneficiary_consolidated'] = df_analysis['beneficiary_name'].map(
+                            consolidation_map
+                        ).fillna(df_analysis['beneficiary_name'])
+                        consolidated_beneficiaries = len(set(consolidation_map.values()))
+                    else:
+                        df_analysis['beneficiary_consolidated'] = df_analysis['beneficiary_name']
+                        consolidated_beneficiaries = unique_beneficiaries
+                    
+                    progress_bar.progress(60)
+                    status_text.info("🕵️ Detecting fraud rings...")
+                    
+                    # Find hub patterns
+                    hub_analysis = df_analysis.groupby('beneficiary_consolidated').agg({
+                        'customer_no': 'nunique',
+                        'amount': ['sum', 'count', 'mean']
+                    }).round(2)
+                
+                    hub_analysis.columns = ['unique_senders', 'total_amount', 'transaction_count', 'avg_amount']
+                    hub_analysis = hub_analysis.reset_index()
+                    
+                    # Filter for potential fraud rings
+                    high_risk_hubs = hub_analysis[
+                        (hub_analysis['unique_senders'] >= 3) &
+                        (hub_analysis['total_amount'] > 5000)
+                    ].sort_values('unique_senders', ascending=False)
+                    
+                    progress_bar.progress(80)
+                    status_text.info("📊 Preparing results...")
+                    
+                    # Show statistics
+                    st.success("✅ Quick analysis completed!")
+                    progress_bar.progress(100)
+                    status_text.empty()
+                    
+                    # Display statistics
+                    st.divider()
+                    st.subheader("📈 Quick Analysis Results")
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                
+                    with col1:
+                        st.metric("Senders", unique_senders)
+                    
+                    with col2:
+                        st.metric("Beneficiaries", consolidated_beneficiaries)
+                    
+                    with col3:
+                        st.metric("Transactions", total_transactions)
+                    
+                    with col4:
+                        st.metric("Total Amount", f"${total_amount:,.0f}")
+                    
+                    with col5:
+                        reduction_pct = ((unique_beneficiaries - consolidated_beneficiaries) / unique_beneficiaries * 100) if use_consolidation and unique_beneficiaries > 0 else 0
+                        st.metric("Name Reduction", f"{reduction_pct:.1f}%")
+                
+                    # Display fraud rings
+                    st.subheader("🕵️ Detected Fraud Rings (Quick Analysis)")
+                    
+                    if len(high_risk_hubs) > 0:
+                        st.success(f"🎯 Detected {len(high_risk_hubs)} potential hub patterns!")
+                    
+                        for i, (_, hub) in enumerate(high_risk_hubs.head(5).iterrows(), 1):
+                            risk_score = min(0.9, (hub['unique_senders'] / 20) + (hub['total_amount'] / 100000))
+                            risk_color = "🔴" if risk_score > 0.7 else "🟡" if risk_score > 0.5 else "🟢"
+                            
+                            with st.expander(f"{risk_color} Hub Pattern #{i}: {hub['beneficiary_consolidated']} (Risk: {risk_score:.2f})"):
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.metric("Unique Senders", int(hub['unique_senders']))
+                                    st.metric("Transaction Count", int(hub['transaction_count']))
+                                
+                                with col2:
+                                    st.metric("Total Amount", f"${hub['total_amount']:,.0f}")
+                                    st.metric("Average Amount", f"${hub['avg_amount']:,.0f}")
+                                
+                                st.markdown(f"**Pattern:** Single beneficiary receiving from {int(hub['unique_senders'])} different senders")
+                                
+                                # Show sender details
+                                sender_details = df_analysis[df_analysis['beneficiary_consolidated'] == hub['beneficiary_consolidated']].groupby('customer_no')['amount'].agg(['sum', 'count']).reset_index()
+                                sender_details.columns = ['Sender', 'Total Amount', 'Transaction Count']
+                                sender_details = sender_details.sort_values('Total Amount', ascending=False)
+                                
+                                st.dataframe(sender_details.head(10), use_container_width=True)
+                    
+                        # Simple visualization
+                        st.subheader("📊 Fraud Ring Summary")
+                        
+                        # Bar chart of top hubs
+                        fig = go.Figure()
+                        top_hubs = high_risk_hubs.head(10)
+                        
+                        fig.add_trace(go.Bar(
+                            x=top_hubs['beneficiary_consolidated'],
+                            y=top_hubs['unique_senders'],
+                            name='Unique Senders',
+                            text=top_hubs['unique_senders'],
+                            textposition='auto',
+                        ))
+                        
+                        fig.update_layout(
+                            title="Top Fraud Ring Hubs by Sender Count (Quick Analysis)",
+                            xaxis_title="Beneficiary",
+                            yaxis_title="Number of Unique Senders",
+                            height=400
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Export data
+                        st.subheader("💾 Export Results")
+                        csv_data = high_risk_hubs.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Quick Analysis (CSV)",
+                            data=csv_data,
+                            file_name=f"quick_fraud_rings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    else:
+                        st.info("🔍 No suspicious patterns detected in quick analysis. Try Neo4j mode for deeper analysis.")
+                
+            except Exception as e:
+                st.error(f"❌ Error in analysis: {str(e)}")
+        
+        # Custom Cypher Query Section (Neo4j only)
+        if st.session_state.get('neo4j_connected', False):
+            st.divider()
+            st.subheader("🔧 Custom Neo4j Analysis")
+            
+            with st.expander("💡 Sample Queries"):
+                st.code("""
+# Find high-risk relationships
+MATCH (s:Sender)-[r:SENT_TO]->(b:Beneficiary)
+WHERE r.risk_score > 0.7
+RETURN s.name, b.name, r.total_amount, r.risk_score
+ORDER BY r.risk_score DESC LIMIT 10
+
+# Find beneficiaries with most senders
+MATCH (b:Beneficiary)<-[r:SENT_TO]-(s:Sender)
+WITH b, count(s) as sender_count, sum(r.total_amount) as total_received
+WHERE sender_count > 5
+RETURN b.name, sender_count, total_received
+ORDER BY sender_count DESC
+
+# Find circular patterns
+MATCH path = (s1:Sender)-[:SENT_TO*2..4]->(s1)
+RETURN path, length(path) ORDER BY length(path)
+                """, language="cypher")
+            
+            custom_query = st.text_area(
+                "Enter Custom Cypher Query:",
+                height=100,
+                placeholder="MATCH (s:Sender)-[r:SENT_TO]->(b:Beneficiary) RETURN s.name, b.name LIMIT 10"
+            )
+            
+            if st.button("🚀 Execute Query") and custom_query.strip():
+                try:
+                    detector = st.session_state.get('neo4j_detector')
+                    with detector.driver.session() as session:
+                        result = session.run(custom_query)
+                        records = [record.data() for record in result]
+                        
+                        if records:
+                            query_df = pd.DataFrame(records)
+                            st.success(f"✅ Query executed successfully! ({len(records)} results)")
+                            st.dataframe(query_df, use_container_width=True)
+                        else:
+                            st.info("Query executed successfully but returned no results.")
+                            
+                except Exception as e:
+                    st.error(f"Query error: {str(e)}")
+        
+        else:
+            st.info("💡 Click the button above to start fraud ring analysis!")
+            st.info("💡 Connect to Neo4j to unlock advanced fraud detection, interactive visualizations, and custom query capabilities!")
+            
+
+
