@@ -210,7 +210,8 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         "💼 AML Dashboard",
         "👥 Beneficiary Analysis",
         "🤖 LLM Investigator",
-        "🕸️ Neo4j Fraud Rings",
+        # "🕸️ Neo4j Fraud Rings",  # Hidden temporarily
+        "🌐 Network Analysis",
         "ℹ️ Model Information",
     ]
 )
@@ -428,10 +429,11 @@ with tab2:
                 "Contamination Rate", 
                 min_value=0.01, 
                 max_value=0.20, 
-                value=0.02,  # Changed from 0.05 to 0.02 (more conservative)
+                value=st.session_state.get('preset_contamination', 0.02),  # Use preset if available
                 step=0.01,
                 help="Expected proportion of anomalies in the data (lower = more conservative)"
             )
+            st.sidebar.caption("🎯 **Recommended:** Banking 1-3%, FinTech 3-5%")
             
             # Anomaly Detection
             model = IsolationForest(contamination=contamination_rate, random_state=42)
@@ -568,6 +570,205 @@ with tab2:
                     # Add filtering controls for high-risk customers
                     st.subheader("🧑‍💼 Customer-level AML Summary")
                     
+                    # Parameter Recommendations Section
+                    with st.expander("💡 Smart Parameter Recommendations", expanded=False):
+                        st.markdown("### 🎯 Data-Driven Parameter Suggestions")
+                        st.markdown("Based on your data characteristics, here are our recommendations:")
+                        
+                        # Analyze data to provide recommendations
+                        try:
+                            # Calculate data statistics for recommendations
+                            total_customers = len(customer_summary)
+                            flagged_txn_stats = customer_summary["total_flagged_txns"].describe()
+                            zscore_stats = customer_summary["max_zscore"].describe()
+                            percentile_stats = customer_summary["max_percentile"].describe()
+                            amount_stats = customer_summary["total_flagged_amount"].describe()
+                            
+                            # Create recommendation columns
+                            rec_col1, rec_col2 = st.columns(2)
+                            
+                            with rec_col1:
+                                st.markdown("#### 📊 **Current Data Profile**")
+                                st.write(f"• **Total Customers with Flags**: {total_customers}")
+                                st.write(f"• **Avg Flagged Txns per Customer**: {flagged_txn_stats['mean']:.1f}")
+                                st.write(f"• **Max Z-score in Data**: {zscore_stats['max']:.2f}")
+                                st.write(f"• **Max Amount Flagged**: ${amount_stats['max']:,.0f}")
+                                
+                                # Data size based recommendations
+                                if total_customers > 100:
+                                    st.success("✅ Large dataset - Use stricter filters")
+                                elif total_customers > 20:
+                                    st.info("ℹ️ Medium dataset - Use moderate filters")
+                                else:
+                                    st.warning("⚠️ Small dataset - Use lenient filters")
+                            
+                            with rec_col2:
+                                st.markdown("#### 🎯 **Recommended Parameter Ranges**")
+                                
+                                # Smart recommendations based on data distribution
+                                rec_min_flagged = max(2, int(flagged_txn_stats['25%']))
+                                rec_max_flagged = max(3, int(flagged_txn_stats['75%']))
+                                
+                                rec_min_zscore = max(1.0, flagged_txn_stats['25%'] if flagged_txn_stats['25%'] > 0 else 1.5)
+                                rec_max_zscore = min(3.0, flagged_txn_stats['75%'] if flagged_txn_stats['75%'] > 0 else 2.5)
+                                
+                                rec_min_percentile = max(70.0, percentile_stats['25%'])
+                                rec_max_percentile = min(95.0, percentile_stats['75%'])
+                                
+                                rec_min_amount = max(5000, amount_stats['25%'])
+                                rec_max_amount = max(25000, amount_stats['75%'])
+                                
+                                st.write(f"• **Flagged Transactions**: {rec_min_flagged}-{rec_max_flagged}")
+                                st.write(f"• **Z-score Threshold**: {rec_min_zscore:.1f}-{rec_max_zscore:.1f}")
+                                st.write(f"• **Percentile Threshold**: {rec_min_percentile:.0f}%-{rec_max_percentile:.0f}%")
+                                st.write(f"• **Amount Threshold**: ${rec_min_amount:,.0f}-${rec_max_amount:,.0f}")
+                                
+                                # Risk tolerance recommendations
+                                st.markdown("#### 🎚️ **Risk Tolerance Guide**")
+                                risk_col1, risk_col2, risk_col3 = st.columns(3)
+                                
+                                with risk_col1:
+                                    st.markdown("**🔴 Conservative**")
+                                    st.write("• Min Flagged: 5+")
+                                    st.write("• Z-score: 2.5+")
+                                    st.write("• Percentile: 95%+")
+                                    st.write("• Few, high-confidence alerts")
+                                
+                                with risk_col2:
+                                    st.markdown("**🟡 Balanced**")
+                                    st.write("• Min Flagged: 3-4")
+                                    st.write("• Z-score: 2.0-2.5")
+                                    st.write("• Percentile: 85-95%")
+                                    st.write("• Good balance of coverage")
+                                
+                                with risk_col3:
+                                    st.markdown("**🟢 Aggressive**")
+                                    st.write("• Min Flagged: 2-3")
+                                    st.write("• Z-score: 1.5-2.0")
+                                    st.write("• Percentile: 75-85%")
+                                    st.write("• Broader coverage, more alerts")
+                            
+                            # Contamination rate recommendations
+                            st.markdown("#### ⚙️ **Isolation Forest Contamination Rate Guide**")
+                            cont_col1, cont_col2, cont_col3 = st.columns(3)
+                            
+                            with cont_col1:
+                                st.markdown("**🎯 Industry Sectors**")
+                                st.write("• **Banking/Finance**: 1-3%")
+                                st.write("• **Crypto/FinTech**: 3-5%")
+                                st.write("• **Money Services**: 2-4%")
+                                st.write("• **General Business**: 1-2%")
+                            
+                            with cont_col2:
+                                st.markdown("**📊 Data Quality**")
+                                st.write("• **Clean Data**: 1-2%")
+                                st.write("• **Mixed Quality**: 2-4%")
+                                st.write("• **Noisy Data**: 3-5%")
+                                st.write("• **Unknown Quality**: 2%")
+                            
+                            with cont_col3:
+                                st.markdown("**🔍 Investigation Capacity**")
+                                st.write("• **Limited Team**: 1-2%")
+                                st.write("• **Medium Team**: 2-4%")
+                                st.write("• **Large Team**: 3-6%")
+                                st.write("• **Automated**: 5-10%")
+                            
+                            # Quick preset buttons
+                            st.markdown("#### ⚡ **Quick Preset Configurations**")
+                            preset_col1, preset_col2, preset_col3, preset_col4 = st.columns(4)
+                            
+                            # Store recommended values in session state when buttons are clicked
+                            with preset_col1:
+                                if st.button("🔴 Conservative Setup", help="High precision, low false positives"):
+                                    st.session_state['preset_min_flagged'] = max(5, int(flagged_txn_stats['75%']))
+                                    st.session_state['preset_min_zscore'] = 2.5
+                                    st.session_state['preset_min_percentile'] = 95.0
+                                    st.session_state['preset_min_amount'] = max(20000, amount_stats['75%'])
+                                    st.session_state['preset_min_risk'] = 2.0
+                                    st.session_state['preset_contamination'] = 0.02
+                                    st.success("✅ Conservative settings applied!")
+                            
+                            with preset_col2:
+                                if st.button("🟡 Balanced Setup", help="Good balance of coverage and precision"):
+                                    st.session_state['preset_min_flagged'] = max(3, int(flagged_txn_stats['50%']))
+                                    st.session_state['preset_min_zscore'] = 2.0
+                                    st.session_state['preset_min_percentile'] = 90.0
+                                    st.session_state['preset_min_amount'] = max(10000, amount_stats['50%'])
+                                    st.session_state['preset_min_risk'] = 1.5
+                                    st.session_state['preset_contamination'] = 0.03
+                                    st.success("✅ Balanced settings applied!")
+                            
+                            with preset_col3:
+                                if st.button("🟢 Aggressive Setup", help="High coverage, more alerts to review"):
+                                    st.session_state['preset_min_flagged'] = max(2, int(flagged_txn_stats['25%']))
+                                    st.session_state['preset_min_zscore'] = 1.5
+                                    st.session_state['preset_min_percentile'] = 80.0
+                                    st.session_state['preset_min_amount'] = max(5000, amount_stats['25%'])
+                                    st.session_state['preset_min_risk'] = 1.0
+                                    st.session_state['preset_contamination'] = 0.05
+                                    st.success("✅ Aggressive settings applied!")
+                            
+                            with preset_col4:
+                                if st.button("📊 Data-Optimized", help="Optimized for your specific dataset"):
+                                    st.session_state['preset_min_flagged'] = rec_min_flagged
+                                    st.session_state['preset_min_zscore'] = rec_min_zscore
+                                    st.session_state['preset_min_percentile'] = rec_min_percentile
+                                    st.session_state['preset_min_amount'] = rec_min_amount
+                                    st.session_state['preset_min_risk'] = 1.5
+                                    st.session_state['preset_contamination'] = 0.02
+                                    st.success("✅ Data-optimized settings applied!")
+                            
+                            # Expected results preview
+                            st.markdown("#### 📈 **Expected Results Preview**")
+                            
+                            # Calculate expected results for each preset
+                            conservative_count = len(customer_summary[
+                                (customer_summary["total_flagged_txns"] >= max(5, int(flagged_txn_stats['75%']))) &
+                                (customer_summary["max_zscore"] >= 2.5) &
+                                (customer_summary["max_percentile"] >= 95.0)
+                            ])
+                            
+                            balanced_count = len(customer_summary[
+                                (customer_summary["total_flagged_txns"] >= max(3, int(flagged_txn_stats['50%']))) &
+                                (customer_summary["max_zscore"] >= 2.0) &
+                                (customer_summary["max_percentile"] >= 90.0)
+                            ])
+                            
+                            aggressive_count = len(customer_summary[
+                                (customer_summary["total_flagged_txns"] >= max(2, int(flagged_txn_stats['25%']))) &
+                                (customer_summary["max_zscore"] >= 1.5) &
+                                (customer_summary["max_percentile"] >= 80.0)
+                            ])
+                            
+                            prev_col1, prev_col2, prev_col3 = st.columns(3)
+                            with prev_col1:
+                                st.metric("🔴 Conservative Results", f"{conservative_count} customers", f"{conservative_count/total_customers*100:.1f}% of flagged")
+                            with prev_col2:
+                                st.metric("🟡 Balanced Results", f"{balanced_count} customers", f"{balanced_count/total_customers*100:.1f}% of flagged")  
+                            with prev_col3:
+                                st.metric("🟢 Aggressive Results", f"{aggressive_count} customers", f"{aggressive_count/total_customers*100:.1f}% of flagged")
+                        
+                        except Exception as e:
+                            st.warning(f"⚠️ Could not generate recommendations: {str(e)}")
+                            st.info("💡 **General Recommendations**: Start with moderate values and adjust based on results")
+                    
+                    # Calculate recommended ranges for display
+                    try:
+                        rec_min_flagged = max(2, int(flagged_txn_stats['25%']))
+                        rec_max_flagged = max(5, int(flagged_txn_stats['75%']))
+                        rec_min_zscore = max(1.0, zscore_stats['25%'] if zscore_stats['25%'] > 0 else 1.5)
+                        rec_max_zscore = min(3.0, zscore_stats['75%'] if zscore_stats['75%'] > 0 else 2.5)
+                        rec_min_percentile = max(70.0, percentile_stats['25%'])
+                        rec_max_percentile = min(95.0, percentile_stats['75%'])
+                        rec_min_amount = max(5000, amount_stats['25%'])
+                        rec_max_amount = max(25000, amount_stats['75%'])
+                    except:
+                        # Fallback values if calculation fails
+                        rec_min_flagged, rec_max_flagged = 2, 5
+                        rec_min_zscore, rec_max_zscore = 1.5, 2.5
+                        rec_min_percentile, rec_max_percentile = 80.0, 95.0
+                        rec_min_amount, rec_max_amount = 5000, 25000
+                    
                     # Create filter controls
                     col1, col2, col3 = st.columns(3)
                     
@@ -575,28 +776,31 @@ with tab2:
                         min_flagged_txns = st.number_input(
                             "Minimum flagged transactions", 
                             min_value=1, 
-                            value=4,  # Increased from 2 to 4
+                            value=st.session_state.get('preset_min_flagged', 4),  # Use preset if available
                             help="Show customers with at least this many flagged transactions"
                         )
+                        st.caption(f"🎯 **Recommended:** {rec_min_flagged}-{rec_max_flagged}")
                     
                     with col2:
                         min_zscore = st.number_input(
                             "Minimum Z-score threshold", 
                             min_value=0.0, 
-                            value=2.0,  # Increased from 1.5 to 2.0
+                            value=st.session_state.get('preset_min_zscore', 2.0),  # Use preset if available
                             step=0.1,
                             help="Show customers with max Z-score above this threshold"
                         )
+                        st.caption(f"🎯 **Recommended:** {rec_min_zscore:.1f}-{rec_max_zscore:.1f}")
                     
                     with col3:
                         min_percentile = st.number_input(
                             "Minimum percentile threshold", 
                             min_value=0.0, 
                             max_value=100.0, 
-                            value=90.0,  # Increased from 80.0 to 90.0
+                            value=st.session_state.get('preset_min_percentile', 90.0),  # Use preset if available
                             step=5.0,
                             help="Show customers with max percentile above this threshold"
                         )
+                        st.caption(f"🎯 **Recommended:** {rec_min_percentile:.0f}%-{rec_max_percentile:.0f}%")
                     
                     # Add additional filter row for more restrictive filtering
                     col4, col5, col6 = st.columns(3)
@@ -605,19 +809,21 @@ with tab2:
                         min_flagged_amount = st.number_input(
                             "Minimum total flagged amount", 
                             min_value=0.0, 
-                            value=10000.0,  # New filter for high-value customers
+                            value=st.session_state.get('preset_min_amount', 10000.0),  # Use preset if available
                             step=1000.0,
                             help="Show customers with total flagged amount above this threshold"
                         )
+                        st.caption(f"🎯 **Recommended:** ${rec_min_amount:,.0f}-${rec_max_amount:,.0f}")
                     
                     with col5:
                         min_risk_score = st.number_input(
                             "Minimum risk score", 
                             min_value=0.0, 
-                            value=1.5,  # New composite risk filter
+                            value=st.session_state.get('preset_min_risk', 1.5),  # Use preset if available
                             step=0.1,
                             help="Show customers with composite risk score above this threshold"
                         )
+                        st.caption("🎯 **Recommended:** 1.0-2.5")
                         
                     with col6:
                         max_results = st.number_input(
@@ -627,6 +833,7 @@ with tab2:
                             value=25,  # Limit to top 25 customers
                             help="Limit results to top N highest-risk customers"
                         )
+                        st.caption("🎯 **Recommended:** 10-50 customers")
                     
                     # Apply filtering criteria (more restrictive)
                     filtered_summary = customer_summary[
@@ -1289,6 +1496,136 @@ with tab3:
                 st.subheader("Beneficiaries Receiving from Multiple Senders")
                 st.dataframe(filtered_beneficiaries)
 
+                # New Detailed Beneficiaries and Sender Network Table
+                st.markdown("---")
+                st.subheader("🔗 Beneficiaries and Sender Network - Detailed Breakdown")
+                st.markdown("""
+                This table provides a comprehensive view of each beneficiary's sender network, including:
+                - Individual senders and amounts sent
+                - Transaction type breakdown (INT = International, DOMESTIC, TOP-UP)
+                - Global sender metrics
+                """)
+                
+                # Build detailed network table
+                if not filtered_beneficiaries.empty:
+                    network_data = []
+                    
+                    # Define transfer type mappings based on the screenshot
+                    def categorize_transfer(transfer_type):
+                        if transfer_type == 'INTERNATIONAL_PAYMENT':
+                            return 'INT'
+                        elif transfer_type in ['WALLET_TO_WALLET_INTERNAL', 'WALLET_TO_WALLET_EXTERNAL']:
+                            return 'DOMESTIC'
+                        elif transfer_type in ['Top-up', 'TOP_UP', 'TOPUP']:
+                            return 'TOP-UP'
+                        else:
+                            return 'OTHER'
+                    
+                    for _, benef_row in filtered_beneficiaries.head(20).iterrows():
+                        benef_name = benef_row['beneficiary_name']
+                        
+                        # Get all transactions for this beneficiary
+                        benef_txns = df_consolidated[df_consolidated['beneficiary_name'] == benef_name].copy()
+                        
+                        if len(benef_txns) == 0:
+                            continue
+                        
+                        # Categorize transactions
+                        benef_txns['category'] = benef_txns['transfer_type'].apply(categorize_transfer)
+                        
+                        # Get unique senders for this beneficiary
+                        senders = benef_txns.groupby('customer_no').agg({
+                            'amount': 'sum',
+                            'reference_no': 'count',
+                            'CustomerName': 'first'
+                        }).reset_index()
+                        senders = senders.sort_values('amount', ascending=False)
+                        
+                        # For each sender, create a row
+                        for sender_idx, sender_row in senders.iterrows():
+                            sender_id = sender_row['customer_no']
+                            sender_name = sender_row['CustomerName'] if pd.notna(sender_row['CustomerName']) else f"Sender_{sender_id}"
+                            
+                            # Transactions from this sender to this beneficiary
+                            sender_to_benef = benef_txns[benef_txns['customer_no'] == sender_id]
+                            amount_to_benef = sender_to_benef['amount'].sum()
+                            txn_count_to_benef = len(sender_to_benef)
+                            
+                            # Global metrics for this sender (all beneficiaries)
+                            sender_all_txns = df_consolidated[df_consolidated['customer_no'] == sender_id].copy()
+                            sender_all_txns['category'] = sender_all_txns['transfer_type'].apply(categorize_transfer)
+                            
+                            total_sent_global = sender_all_txns['amount'].sum()
+                            total_txn_global = len(sender_all_txns)
+                            unique_beneficiaries_count = sender_all_txns['beneficiary_name'].nunique()
+                            
+                            # Break down by category for this sender globally
+                            int_txns = sender_all_txns[sender_all_txns['category'] == 'INT']
+                            domestic_txns = sender_all_txns[sender_all_txns['category'] == 'DOMESTIC']
+                            topup_txns = sender_all_txns[sender_all_txns['category'] == 'TOP-UP']
+                            
+                            total_amount_int = int_txns['amount'].sum()
+                            nb_txn_int = len(int_txns)
+                            
+                            total_amount_domestic = domestic_txns['amount'].sum()
+                            nb_txn_domestic = len(domestic_txns)
+                            
+                            total_amount_topup = topup_txns['amount'].sum()
+                            nb_txn_topup = len(topup_txns)
+                            
+                            network_data.append({
+                                'Beneficiary': benef_name,
+                                'Sender': sender_name,
+                                'Amount to Benef': f"${amount_to_benef:,.2f}",
+                                'Txns to Benef': txn_count_to_benef,
+                                'Total Txns (All Benefs)': total_txn_global,
+                                'Total Amount Sent (Global)': f"${total_sent_global:,.2f}",
+                                'Unique Beneficiaries': unique_beneficiaries_count,
+                                '💰 Total INT': f"${total_amount_int:,.2f}",
+                                '📊 Nb Txn INT': nb_txn_int,
+                                '🏠 Total DOMESTIC': f"${total_amount_domestic:,.2f}",
+                                '📊 Nb Txn DOMESTIC': nb_txn_domestic,
+                                '⬆️ Total TOP-UP': f"${total_amount_topup:,.2f}",
+                                '📊 Nb Txn TOP-UP': nb_txn_topup
+                            })
+                    
+                    if network_data:
+                        network_df = pd.DataFrame(network_data)
+                        
+                        # Remove duplicate beneficiary names for display (show only once per beneficiary group)
+                        display_df = network_df.copy()
+                        prev_benef = None
+                        for idx in range(len(display_df)):
+                            current_benef = display_df.iloc[idx]['Beneficiary']
+                            if current_benef == prev_benef:
+                                display_df.at[idx, 'Beneficiary'] = ''  # Empty string for repeated beneficiary
+                            else:
+                                prev_benef = current_benef
+                        
+                        # Display with formatting
+                        st.markdown("#### 📋 Transaction Type Labels:")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.info("**💰 INT (International)**\n- INTERNATIONAL_PAYMENT")
+                        with col2:
+                            st.success("**🏠 DOMESTIC**\n- WALLET_TO_WALLET_INTERNAL\n- WALLET_TO_WALLET_EXTERNAL")
+                        with col3:
+                            st.warning("**⬆️ TOP-UP**\n- Top-up transactions")
+                        
+                        st.markdown("#### 📊 Network Data:")
+                        st.dataframe(display_df, use_container_width=True, height=400)
+                        
+                        # Export option
+                        csv_export = network_df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Network Data (CSV)",
+                            data=csv_export,
+                            file_name="beneficiary_sender_network.csv",
+                            mime="text/csv"
+                        )
+                    else:
+                        st.info("No network data available for the filtered beneficiaries.")
+
                 # Further analysis on suspicious beneficiaries
                 if not filtered_beneficiaries.empty:
                     selected_beneficiary = st.selectbox(
@@ -1764,6 +2101,387 @@ with tab4:
 # The entire tab content has been commented out
 pass
 
+with tab5:
+    st.header("🌐 Transaction Network Analysis")
+    st.markdown("""
+    Explore transaction networks, identify clusters, and analyze sender-beneficiary relationships.
+    This section provides detailed network visualization and comprehensive sender profiling.
+    """)
+    
+    # Check if data is available
+    uploaded_file = st.session_state.get("uploaded_file", None)
+    if uploaded_file is None:
+        st.info("Please upload a transaction CSV file in the EDA tab first.")
+    else:
+        df = st.session_state.get("processed_df", None)
+        if df is None:
+            st.info("Please upload a transaction CSV file in the EDA tab first.")
+            st.stop()
+        
+        # Network Analysis Configuration
+        st.subheader("⚙️ Analysis Configuration")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            min_transaction_threshold = st.number_input(
+                "Minimum transactions for inclusion",
+                min_value=1,
+                value=2,
+                help="Filter nodes with at least this many transactions"
+            )
+        with col2:
+            min_amount_threshold = st.number_input(
+                "Minimum transaction amount",
+                min_value=0.0,
+                value=1000.0,
+                step=500.0,
+                help="Filter transactions above this amount"
+            )
+        with col3:
+            top_n_senders = st.number_input(
+                "Top N senders to analyze",
+                min_value=5,
+                max_value=100,
+                value=20,
+                help="Focus on top senders by transaction volume"
+            )
+        
+        if st.button("🔍 Analyze Transaction Network", use_container_width=True):
+            with st.spinner("Analyzing transaction network..."):
+                try:
+                    # Filter data
+                    df_filtered = df[df['amount'] >= min_amount_threshold].copy()
+                    
+                    # Sender Analysis - Many to One
+                    st.subheader("📤 Sender Analysis (Many-to-One Patterns)")
+                    
+                    # Calculate sender metrics
+                    sender_metrics = df_filtered.groupby('customer_no').agg({
+                        'amount': ['sum', 'count', 'mean'],
+                        'beneficiary_name': 'nunique',
+                        'transfer_type': lambda x: list(x.unique()),
+                        'createdDateTime': ['min', 'max']
+                    }).reset_index()
+                    
+                    # Flatten column names
+                    sender_metrics.columns = [
+                        'customer_no', 'total_sent', 'txn_count', 'avg_amount',
+                        'unique_beneficiaries', 'transfer_types', 'first_txn', 'last_txn'
+                    ]
+                    
+                    # Calculate international vs domestic
+                    sender_international = df_filtered[df_filtered['transfer_type'] == 'INTERNATIONAL_PAYMENT'].groupby('customer_no').agg({
+                        'amount': 'sum',
+                        'reference_no': 'count'
+                    }).reset_index()
+                    sender_international.columns = ['customer_no', 'intl_amount', 'intl_count']
+                    
+                    sender_domestic = df_filtered[df_filtered['transfer_type'] == 'DOMESTIC_PAYMENT'].groupby('customer_no').agg({
+                        'amount': 'sum',
+                        'reference_no': 'count'
+                    }).reset_index()
+                    sender_domestic.columns = ['customer_no', 'domestic_amount', 'domestic_count']
+                    
+                    # Merge metrics
+                    sender_metrics = sender_metrics.merge(sender_international, on='customer_no', how='left')
+                    sender_metrics = sender_metrics.merge(sender_domestic, on='customer_no', how='left')
+                    sender_metrics['intl_amount'] = sender_metrics['intl_amount'].fillna(0)
+                    sender_metrics['intl_count'] = sender_metrics['intl_count'].fillna(0)
+                    sender_metrics['domestic_amount'] = sender_metrics['domestic_amount'].fillna(0)
+                    sender_metrics['domestic_count'] = sender_metrics['domestic_count'].fillna(0)
+                    
+                    # Get customer names
+                    customer_names = df_filtered.groupby('customer_no')['CustomerName'].first().reset_index()
+                    sender_metrics = sender_metrics.merge(customer_names, on='customer_no', how='left')
+                    
+                    # Sort by total sent
+                    sender_metrics = sender_metrics.sort_values('total_sent', ascending=False)
+                    
+                    # Filter senders with minimum transactions
+                    sender_metrics = sender_metrics[sender_metrics['txn_count'] >= min_transaction_threshold]
+                    
+                    # Display top senders
+                    st.markdown(f"### 🎯 Top {top_n_senders} Senders")
+                    
+                    top_senders = sender_metrics.head(top_n_senders)
+                    
+                    for idx, sender in top_senders.iterrows():
+                        with st.expander(f"👤 {sender['CustomerName']} (ID: {sender['customer_no']}) - ${sender['total_sent']:,.0f} sent"):
+                            
+                            # Summary metrics
+                            col1, col2, col3, col4 = st.columns(4)
+                            with col1:
+                                st.metric("Total Sent", f"${sender['total_sent']:,.0f}")
+                                st.metric("Transaction Count", int(sender['txn_count']))
+                            with col2:
+                                st.metric("Unique Beneficiaries", int(sender['unique_beneficiaries']))
+                                st.metric("Avg Transaction", f"${sender['avg_amount']:,.0f}")
+                            with col3:
+                                st.metric("International Amount", f"${sender['intl_amount']:,.0f}")
+                                st.metric("International Txns", int(sender['intl_count']))
+                            with col4:
+                                st.metric("Domestic Amount", f"${sender['domestic_amount']:,.0f}")
+                                st.metric("Domestic Txns", int(sender['domestic_count']))
+                            
+                            # Timeline
+                            st.write(f"**📅 First Transaction:** {sender['first_txn'].strftime('%Y-%m-%d')}")
+                            st.write(f"**📅 Last Transaction:** {sender['last_txn'].strftime('%Y-%m-%d')}")
+                            
+                            # Beneficiary breakdown
+                            sender_txns = df_filtered[df_filtered['customer_no'] == sender['customer_no']]
+                            beneficiary_details = sender_txns.groupby('beneficiary_name').agg({
+                                'amount': ['sum', 'count', 'mean'],
+                                'transfer_type': lambda x: ', '.join(x.unique())
+                            }).reset_index()
+                            beneficiary_details.columns = ['Beneficiary', 'Total Amount', 'Txn Count', 'Avg Amount', 'Transfer Types']
+                            beneficiary_details = beneficiary_details.sort_values('Total Amount', ascending=False)
+                            
+                            st.markdown("**💰 Beneficiary Breakdown:**")
+                            st.dataframe(beneficiary_details, use_container_width=True)
+                            
+                            # Pie chart for beneficiary distribution
+                            if len(beneficiary_details) > 1:
+                                fig = px.pie(
+                                    beneficiary_details,
+                                    values='Total Amount',
+                                    names='Beneficiary',
+                                    title=f'Amount Distribution Across Beneficiaries'
+                                )
+                                st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Network Groups Analysis
+                    st.divider()
+                    st.subheader("🕸️ Network Groups & Clusters")
+                    st.markdown("Senders who transact with 2-3 beneficiaries often form interconnected networks")
+                    
+                    # Find senders with 2-3 beneficiaries (potential networks)
+                    network_senders = sender_metrics[
+                        (sender_metrics['unique_beneficiaries'] >= 2) &
+                        (sender_metrics['unique_beneficiaries'] <= 5)
+                    ].head(15)
+                    
+                    if len(network_senders) > 0:
+                        # Build network data
+                        import networkx as nx
+                        G = nx.DiGraph()
+                        
+                        for _, sender in network_senders.iterrows():
+                            sender_id = sender['customer_no']
+                            sender_name = sender['CustomerName']
+                            
+                            # Get all beneficiaries for this sender
+                            sender_txns = df_filtered[df_filtered['customer_no'] == sender_id]
+                            
+                            for _, txn in sender_txns.iterrows():
+                                beneficiary = txn['beneficiary_name']
+                                amount = txn['amount']
+                                transfer_type = txn['transfer_type']
+                                
+                                # Add nodes
+                                if not G.has_node(sender_id):
+                                    G.add_node(sender_id, label=sender_name, node_type='sender', size=20)
+                                if not G.has_node(beneficiary):
+                                    G.add_node(beneficiary, label=beneficiary, node_type='beneficiary', size=15)
+                                
+                                # Add or update edge
+                                if G.has_edge(sender_id, beneficiary):
+                                    G[sender_id][beneficiary]['weight'] += amount
+                                    G[sender_id][beneficiary]['count'] += 1
+                                else:
+                                    G.add_edge(sender_id, beneficiary, weight=amount, count=1, transfer_type=transfer_type)
+                        
+                        # Create interactive network visualization using Plotly
+                        st.markdown("### 📊 Interactive Network Visualization")
+                        
+                        # Use spring layout for positioning
+                        pos = nx.spring_layout(G, k=2, iterations=50)
+                        
+                        # Prepare edge traces
+                        edge_trace = []
+                        for edge in G.edges():
+                            x0, y0 = pos[edge[0]]
+                            x1, y1 = pos[edge[1]]
+                            edge_info = G[edge[0]][edge[1]]
+                            
+                            # Color based on transfer type
+                            color = '#FF6B6B' if edge_info.get('transfer_type') == 'INTERNATIONAL_PAYMENT' else '#4ECDC4'
+                            width = min(5, 1 + edge_info['weight'] / 10000)
+                            
+                            edge_trace.append(
+                                go.Scatter(
+                                    x=[x0, x1, None],
+                                    y=[y0, y1, None],
+                                    mode='lines',
+                                    line=dict(width=width, color=color),
+                                    hoverinfo='text',
+                                    text=f"Amount: ${edge_info['weight']:,.0f}<br>Txns: {edge_info['count']}<br>Type: {edge_info.get('transfer_type', 'N/A')}",
+                                    showlegend=False
+                                )
+                            )
+                        
+                        # Prepare node traces
+                        sender_nodes_x = []
+                        sender_nodes_y = []
+                        sender_nodes_text = []
+                        beneficiary_nodes_x = []
+                        beneficiary_nodes_y = []
+                        beneficiary_nodes_text = []
+                        
+                        for node in G.nodes():
+                            x, y = pos[node]
+                            node_data = G.nodes[node]
+                            
+                            if node_data['node_type'] == 'sender':
+                                sender_nodes_x.append(x)
+                                sender_nodes_y.append(y)
+                                sender_nodes_text.append(f"Sender: {node_data['label']}")
+                            else:
+                                beneficiary_nodes_x.append(x)
+                                beneficiary_nodes_y.append(y)
+                                beneficiary_nodes_text.append(f"Beneficiary: {node_data['label']}")
+                        
+                        # Create figure
+                        fig = go.Figure()
+                        
+                        # Add edges
+                        for trace in edge_trace:
+                            fig.add_trace(trace)
+                        
+                        # Add sender nodes
+                        fig.add_trace(go.Scatter(
+                            x=sender_nodes_x,
+                            y=sender_nodes_y,
+                            mode='markers+text',
+                            marker=dict(size=25, color='#95E1D3', line=dict(width=2, color='white')),
+                            text=sender_nodes_text,
+                            textposition='top center',
+                            hoverinfo='text',
+                            name='Senders',
+                            textfont=dict(size=8)
+                        ))
+                        
+                        # Add beneficiary nodes
+                        fig.add_trace(go.Scatter(
+                            x=beneficiary_nodes_x,
+                            y=beneficiary_nodes_y,
+                            mode='markers+text',
+                            marker=dict(size=20, color='#FFE66D', line=dict(width=2, color='white')),
+                            text=beneficiary_nodes_text,
+                            textposition='bottom center',
+                            hoverinfo='text',
+                            name='Beneficiaries',
+                            textfont=dict(size=8)
+                        ))
+                        
+                        fig.update_layout(
+                            title="Transaction Network: Senders and Beneficiaries",
+                            showlegend=True,
+                            hovermode='closest',
+                            margin=dict(b=0, l=0, r=0, t=40),
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            height=700,
+                            legend=dict(x=0.02, y=0.98)
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Legend
+                        st.markdown("""
+                        **🎨 Visualization Legend:**
+                        - 🟢 **Green nodes**: Senders
+                        - 🟡 **Yellow nodes**: Beneficiaries
+                        - 🔴 **Red lines**: International transactions
+                        - 🔵 **Blue lines**: Domestic transactions
+                        - **Line thickness**: Proportional to transaction amount
+                        """)
+                        
+                        # Network Statistics
+                        st.markdown("### 📊 Network Statistics")
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Nodes", len(G.nodes()))
+                        with col2:
+                            st.metric("Total Connections", len(G.edges()))
+                        with col3:
+                            st.metric("Senders in Network", len([n for n in G.nodes() if G.nodes[n]['node_type'] == 'sender']))
+                        with col4:
+                            st.metric("Beneficiaries in Network", len([n for n in G.nodes() if G.nodes[n]['node_type'] == 'beneficiary']))
+                        
+                        # Identify potential fraud rings
+                        st.markdown("### 🎯 Identified Network Groups")
+                        
+                        # Find groups where beneficiaries receive from multiple senders
+                        beneficiary_sender_map = {}
+                        for edge in G.edges():
+                            sender, beneficiary = edge
+                            if beneficiary not in beneficiary_sender_map:
+                                beneficiary_sender_map[beneficiary] = []
+                            beneficiary_sender_map[beneficiary].append(sender)
+                        
+                        # Find beneficiaries with multiple senders (potential hubs)
+                        hub_beneficiaries = {k: v for k, v in beneficiary_sender_map.items() if len(v) >= 2}
+                        
+                        if hub_beneficiaries:
+                            st.success(f"🎯 Found {len(hub_beneficiaries)} potential network hubs")
+                            
+                            for beneficiary, senders in list(hub_beneficiaries.items())[:5]:
+                                with st.expander(f"🎯 Hub: {beneficiary} (receives from {len(senders)} senders)"):
+                                    st.write(f"**Connected Senders:** {', '.join(senders)}")
+                                    
+                                    # Check if transactions are international or domestic
+                                    hub_txns = df_filtered[
+                                        (df_filtered['beneficiary_name'] == beneficiary) &
+                                        (df_filtered['customer_no'].isin(senders))
+                                    ]
+                                    
+                                    intl_count = len(hub_txns[hub_txns['transfer_type'] == 'INTERNATIONAL_PAYMENT'])
+                                    domestic_count = len(hub_txns[hub_txns['transfer_type'] == 'DOMESTIC_PAYMENT'])
+                                    
+                                    col1, col2, col3 = st.columns(3)
+                                    with col1:
+                                        st.metric("Total Transactions", len(hub_txns))
+                                    with col2:
+                                        st.metric("International", intl_count)
+                                    with col3:
+                                        st.metric("Domestic", domestic_count)
+                        else:
+                            st.info("No multi-sender hubs detected in this network")
+                        
+                        # Export network data
+                        st.markdown("### 💾 Export Network Data")
+                        
+                        # Prepare export data
+                        network_export = []
+                        for edge in G.edges():
+                            sender, beneficiary = edge
+                            edge_data = G[edge[0]][edge[1]]
+                            network_export.append({
+                                'Sender': sender,
+                                'Beneficiary': beneficiary,
+                                'Total Amount': edge_data['weight'],
+                                'Transaction Count': edge_data['count'],
+                                'Transfer Type': edge_data.get('transfer_type', 'N/A')
+                            })
+                        
+                        network_df = pd.DataFrame(network_export)
+                        csv_data = network_df.to_csv(index=False)
+                        
+                        st.download_button(
+                            label="📥 Download Network Analysis (CSV)",
+                            data=csv_data,
+                            file_name=f"network_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    else:
+                        st.info("No suitable network groups found with current filters. Try adjusting the thresholds.")
+                
+                except Exception as e:
+                    st.error(f"❌ Error in network analysis: {str(e)}")
+                    import traceback
+                    st.code(traceback.format_exc())
+
 with tab6:
     st.markdown(
         """
@@ -1849,7 +2567,9 @@ with tab6:
     """
     )
 
-with tab5:
+# Neo4j Fraud Ring Detection tab (tab5) has been hidden temporarily as requested
+# The code below is kept for future reference but not executed
+if False:  # This disables the entire Neo4j section
     st.header("🕸️ Neo4j Fraud Ring Detection")
     
     # Check if data is available
@@ -2180,139 +2900,139 @@ with tab5:
                 else:
                     # Quick Pandas Analysis
                     status_text.info("📊 Quick analysis using pandas...")
-                    
-                    # Basic stats
-                    total_transactions = len(df)
-                    unique_senders = df['customer_no'].nunique()
-                    unique_beneficiaries = df['beneficiary_name'].nunique()
-                    total_amount = df['amount'].sum()
-                    
-                    progress_bar.progress(40)
-                    status_text.info("👥 Processing beneficiary consolidation...")
-                    
-                    # Fast consolidation
-                    df_analysis = df.copy()
-                    if use_consolidation and consolidation_map:
-                        df_analysis['beneficiary_consolidated'] = df_analysis['beneficiary_name'].map(
-                            consolidation_map
-                        ).fillna(df_analysis['beneficiary_name'])
-                        consolidated_beneficiaries = len(set(consolidation_map.values()))
-                    else:
-                        df_analysis['beneficiary_consolidated'] = df_analysis['beneficiary_name']
-                        consolidated_beneficiaries = unique_beneficiaries
-                    
-                    progress_bar.progress(60)
-                    status_text.info("🕵️ Detecting fraud rings...")
-                    
-                    # Find hub patterns
-                    hub_analysis = df_analysis.groupby('beneficiary_consolidated').agg({
-                        'customer_no': 'nunique',
-                        'amount': ['sum', 'count', 'mean']
-                    }).round(2)
                 
-                    hub_analysis.columns = ['unique_senders', 'total_amount', 'transaction_count', 'avg_amount']
-                    hub_analysis = hub_analysis.reset_index()
-                    
-                    # Filter for potential fraud rings
-                    high_risk_hubs = hub_analysis[
-                        (hub_analysis['unique_senders'] >= 3) &
-                        (hub_analysis['total_amount'] > 5000)
-                    ].sort_values('unique_senders', ascending=False)
-                    
-                    progress_bar.progress(80)
-                    status_text.info("📊 Preparing results...")
-                    
-                    # Show statistics
-                    st.success("✅ Quick analysis completed!")
-                    progress_bar.progress(100)
-                    status_text.empty()
-                    
-                    # Display statistics
-                    st.divider()
-                    st.subheader("📈 Quick Analysis Results")
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                # Basic stats
+                total_transactions = len(df)
+                unique_senders = df['customer_no'].nunique()
+                unique_beneficiaries = df['beneficiary_name'].nunique()
+                total_amount = df['amount'].sum()
                 
-                    with col1:
-                        st.metric("Senders", unique_senders)
-                    
-                    with col2:
-                        st.metric("Beneficiaries", consolidated_beneficiaries)
-                    
-                    with col3:
-                        st.metric("Transactions", total_transactions)
-                    
-                    with col4:
-                        st.metric("Total Amount", f"${total_amount:,.0f}")
-                    
-                    with col5:
-                        reduction_pct = ((unique_beneficiaries - consolidated_beneficiaries) / unique_beneficiaries * 100) if use_consolidation and unique_beneficiaries > 0 else 0
-                        st.metric("Name Reduction", f"{reduction_pct:.1f}%")
+                progress_bar.progress(40)
+                status_text.info("👥 Processing beneficiary consolidation...")
                 
-                    # Display fraud rings
-                    st.subheader("🕵️ Detected Fraud Rings (Quick Analysis)")
+                # Fast consolidation
+                df_analysis = df.copy()
+                if use_consolidation and consolidation_map:
+                    df_analysis['beneficiary_consolidated'] = df_analysis['beneficiary_name'].map(
+                        consolidation_map
+                    ).fillna(df_analysis['beneficiary_name'])
+                    consolidated_beneficiaries = len(set(consolidation_map.values()))
+                else:
+                    df_analysis['beneficiary_consolidated'] = df_analysis['beneficiary_name']
+                    consolidated_beneficiaries = unique_beneficiaries
+                
+                progress_bar.progress(60)
+                status_text.info("🕵️ Detecting fraud rings...")
+                
+                # Find hub patterns
+                hub_analysis = df_analysis.groupby('beneficiary_consolidated').agg({
+                    'customer_no': 'nunique',
+                    'amount': ['sum', 'count', 'mean']
+                }).round(2)
+                
+                hub_analysis.columns = ['unique_senders', 'total_amount', 'transaction_count', 'avg_amount']
+                hub_analysis = hub_analysis.reset_index()
+                
+                # Filter for potential fraud rings
+                high_risk_hubs = hub_analysis[
+                    (hub_analysis['unique_senders'] >= 3) &
+                    (hub_analysis['total_amount'] > 5000)
+                ].sort_values('unique_senders', ascending=False)
+                
+                progress_bar.progress(80)
+                status_text.info("📊 Preparing results...")
+                
+                # Show statistics
+                st.success("✅ Quick analysis completed!")
+                progress_bar.progress(100)
+                status_text.empty()
+                
+                # Display statistics
+                st.divider()
+                st.subheader("📈 Quick Analysis Results")
+                col1, col2, col3, col4, col5 = st.columns(5)
+                
+                with col1:
+                    st.metric("Senders", unique_senders)
+                
+                with col2:
+                    st.metric("Beneficiaries", consolidated_beneficiaries)
+                
+                with col3:
+                    st.metric("Transactions", total_transactions)
+                
+                with col4:
+                    st.metric("Total Amount", f"${total_amount:,.0f}")
+                
+                with col5:
+                    reduction_pct = ((unique_beneficiaries - consolidated_beneficiaries) / unique_beneficiaries * 100) if use_consolidation and unique_beneficiaries > 0 else 0
+                    st.metric("Name Reduction", f"{reduction_pct:.1f}%")
+                
+                # Display fraud rings
+                st.subheader("🕵️ Detected Fraud Rings (Quick Analysis)")
+                
+                if len(high_risk_hubs) > 0:
+                    st.success(f"🎯 Detected {len(high_risk_hubs)} potential hub patterns!")
                     
-                    if len(high_risk_hubs) > 0:
-                        st.success(f"🎯 Detected {len(high_risk_hubs)} potential hub patterns!")
-                    
-                        for i, (_, hub) in enumerate(high_risk_hubs.head(5).iterrows(), 1):
-                            risk_score = min(0.9, (hub['unique_senders'] / 20) + (hub['total_amount'] / 100000))
-                            risk_color = "🔴" if risk_score > 0.7 else "🟡" if risk_score > 0.5 else "🟢"
+                    for i, (_, hub) in enumerate(high_risk_hubs.head(5).iterrows(), 1):
+                        risk_score = min(0.9, (hub['unique_senders'] / 20) + (hub['total_amount'] / 100000))
+                        risk_color = "🔴" if risk_score > 0.7 else "🟡" if risk_score > 0.5 else "🟢"
+                        
+                        with st.expander(f"{risk_color} Hub Pattern #{i}: {hub['beneficiary_consolidated']} (Risk: {risk_score:.2f})"):
+                            col1, col2 = st.columns(2)
                             
-                            with st.expander(f"{risk_color} Hub Pattern #{i}: {hub['beneficiary_consolidated']} (Risk: {risk_score:.2f})"):
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.metric("Unique Senders", int(hub['unique_senders']))
-                                    st.metric("Transaction Count", int(hub['transaction_count']))
-                                
-                                with col2:
-                                    st.metric("Total Amount", f"${hub['total_amount']:,.0f}")
-                                    st.metric("Average Amount", f"${hub['avg_amount']:,.0f}")
-                                
-                                st.markdown(f"**Pattern:** Single beneficiary receiving from {int(hub['unique_senders'])} different senders")
-                                
-                                # Show sender details
-                                sender_details = df_analysis[df_analysis['beneficiary_consolidated'] == hub['beneficiary_consolidated']].groupby('customer_no')['amount'].agg(['sum', 'count']).reset_index()
-                                sender_details.columns = ['Sender', 'Total Amount', 'Transaction Count']
-                                sender_details = sender_details.sort_values('Total Amount', ascending=False)
-                                
-                                st.dataframe(sender_details.head(10), use_container_width=True)
+                            with col1:
+                                st.metric("Unique Senders", int(hub['unique_senders']))
+                                st.metric("Transaction Count", int(hub['transaction_count']))
+                            
+                            with col2:
+                                st.metric("Total Amount", f"${hub['total_amount']:,.0f}")
+                                st.metric("Average Amount", f"${hub['avg_amount']:,.0f}")
+                            
+                            st.markdown(f"**Pattern:** Single beneficiary receiving from {int(hub['unique_senders'])} different senders")
+                            
+                            # Show sender details
+                            sender_details = df_analysis[df_analysis['beneficiary_consolidated'] == hub['beneficiary_consolidated']].groupby('customer_no')['amount'].agg(['sum', 'count']).reset_index()
+                            sender_details.columns = ['Sender', 'Total Amount', 'Transaction Count']
+                            sender_details = sender_details.sort_values('Total Amount', ascending=False)
+                            
+                            st.dataframe(sender_details.head(10), use_container_width=True)
                     
-                        # Simple visualization
-                        st.subheader("📊 Fraud Ring Summary")
-                        
-                        # Bar chart of top hubs
-                        fig = go.Figure()
-                        top_hubs = high_risk_hubs.head(10)
-                        
-                        fig.add_trace(go.Bar(
-                            x=top_hubs['beneficiary_consolidated'],
-                            y=top_hubs['unique_senders'],
-                            name='Unique Senders',
-                            text=top_hubs['unique_senders'],
-                            textposition='auto',
-                        ))
-                        
-                        fig.update_layout(
+                    # Simple visualization
+                    st.subheader("📊 Fraud Ring Summary")
+                    
+                    # Bar chart of top hubs
+                    fig = go.Figure()
+                    top_hubs = high_risk_hubs.head(10)
+                    
+                    fig.add_trace(go.Bar(
+                        x=top_hubs['beneficiary_consolidated'],
+                        y=top_hubs['unique_senders'],
+                        name='Unique Senders',
+                        text=top_hubs['unique_senders'],
+                        textposition='auto',
+                    ))
+                    
+                    fig.update_layout(
                             title="Top Fraud Ring Hubs by Sender Count (Quick Analysis)",
-                            xaxis_title="Beneficiary",
-                            yaxis_title="Number of Unique Senders",
-                            height=400
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Export data
-                        st.subheader("💾 Export Results")
-                        csv_data = high_risk_hubs.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Quick Analysis (CSV)",
-                            data=csv_data,
-                            file_name=f"quick_fraud_rings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
-                        )
+                        xaxis_title="Beneficiary",
+                        yaxis_title="Number of Unique Senders",
+                        height=400
+                    )
                     
-                    else:
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Export data
+                    st.subheader("💾 Export Results")
+                    csv_data = high_risk_hubs.to_csv(index=False)
+                    st.download_button(
+                            label="📥 Download Quick Analysis (CSV)",
+                        data=csv_data,
+                            file_name=f"quick_fraud_rings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                
+                else:
                         st.info("🔍 No suspicious patterns detected in quick analysis. Try Neo4j mode for deeper analysis.")
                 
             except Exception as e:
