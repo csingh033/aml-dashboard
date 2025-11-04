@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  aml-dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    expose:
+      - "8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    container_name: aml-dashboard
+    networks:
+      - aml-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - aml-dashboard
+    restart: unless-stopped
+    container_name: aml-nginx
+    networks:
+      - aml-network
+
+networks:
+  aml-network:
+    driver: bridge
+
