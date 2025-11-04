@@ -79,8 +79,9 @@ tmp/
 *.zip
 aml-dashboard-stakeholder-package/
 
-# Streamlit
-.streamlit/
+# Streamlit (exclude secrets but keep config)
+.streamlit/secrets.toml
+.streamlit/credentials.toml
 
 # Model files
 *.pkl
