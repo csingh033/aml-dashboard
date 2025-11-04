@@ -7,10 +7,18 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    make \
+    python3-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY ../requirements.txt .
+
+# Upgrade pip and install wheel first
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files from parent directory
