@@ -1,10 +1,14 @@
 [server]
 maxUploadSize = 1000
 maxMessageSize = 1000
+enableXsrfProtection = false
+enableCORS = false
+fileWatcherType = "none"
 
 [browser]
 gatherUsageStats = false
 
 [runner]
 fastReruns = true
+magicEnabled = false
 
