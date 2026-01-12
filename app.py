@@ -1572,14 +1572,39 @@ with tab3:
                 try:
                     # Step 1: Automatic name consolidation for whitespace/case variations
                     st.subheader("🔧 Automatic Name Consolidation")
+                    with st.expander("ℹ️ Consolidation types considered (with examples)"):
+                        st.markdown(
+                            """
+                            - Case/whitespace/punctuation normalization: `MD.  SAROWAR` → `MD SAROWAR`
+                            - Common abbreviation expansion: `MD SAIF UDDIN` → `MOHAMMED SAIF UDDIN`
+                            - Word order normalization: `JOHNNY VICTOR IBANGA` → `IBANGA JOHNNY VICTOR`
+                            - Null markers ignored: `NULL` → (ignored)
+                            """
+                        )
 
                     # Create normalized name mapping
                     def normalize_name(name):
-                        """Normalize name by removing extra spaces and converting to uppercase"""
+                        """Normalize name by standardizing tokens and order for grouping"""
                         if pd.isna(name) or not isinstance(name, str):
                             return ""
-                        # Remove extra spaces and convert to uppercase
-                        return " ".join(name.upper().split())
+
+                        raw = name.strip().upper()
+                        if raw in {"", "NULL", "N/A", "NA", "NONE"}:
+                            return ""
+
+                        # Keep only letters and spaces, then split into tokens
+                        cleaned = re.sub(r"[^A-Z\\s]", " ", raw)
+                        tokens = [t for t in cleaned.split() if t]
+
+                        # Expand common abbreviations to canonical forms
+                        token_map = {
+                            "MD": "MOHAMMED",
+                        }
+                        normalized_tokens = [token_map.get(t, t) for t in tokens]
+                        # Remove duplicated tokens like "ALAM ALAM"
+                        normalized_tokens = sorted(set(normalized_tokens))
+
+                        return " ".join(normalized_tokens)
 
                     # Create mapping of original names to normalized names
                     all_beneficiary_names = (
@@ -1761,7 +1786,7 @@ with tab3:
                         else:
                             return "OTHER"
 
-                    for _, benef_row in filtered_beneficiaries.head(20).iterrows():
+                    for _, benef_row in filtered_beneficiaries.iterrows():
                         benef_name = benef_row["beneficiary_name"]
 
                         # Get all transactions for this beneficiary
