@@ -1572,7 +1572,9 @@ with tab3:
                 try:
                     # Step 1: Automatic name consolidation for whitespace/case variations
                     st.subheader("🔧 Automatic Name Consolidation")
-                    with st.expander("ℹ️ Consolidation types considered (with examples)"):
+                    with st.expander(
+                        "ℹ️ Consolidation types considered (with examples)"
+                    ):
                         st.markdown(
                             """
                             - Case/whitespace/punctuation normalization: `MD.  SAROWAR` → `MD SAROWAR`

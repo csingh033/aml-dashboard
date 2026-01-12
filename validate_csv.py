@@ -114,9 +114,7 @@ def validate_csv(filename):
                     print(f"⚠️  {null_dates}/{len(df)} sample rows have invalid dates")
                 else:
                     print(f"✅ Date format valid")
-                    print(
-                        f"   Date range: {dates.min()} to {dates.max()}"
-                    )
+                    print(f"   Date range: {dates.min()} to {dates.max()}")
             except Exception as e:
                 warnings.append(f"Date validation issue: {str(e)}")
 
@@ -215,4 +213,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
