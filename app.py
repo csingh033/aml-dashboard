@@ -1601,6 +1601,14 @@ with tab3:
                         # Expand common abbreviations to canonical forms
                         token_map = {
                             "MD": "MOHAMMED",
+                            "MOHAMAD": "MOHAMMED",
+                            "MOHAMED": "MOHAMMED",
+                            "MOHAMMED": "MOHAMMED",
+                            "MOHAMMAD": "MOHAMMED",
+                            "MOHAMMUD": "MOHAMMED",
+                            "MUHAMAD": "MOHAMMED",
+                            "MUHAMMAD": "MOHAMMED",
+                            "MUHAMMED": "MOHAMMED",
                         }
                         normalized_tokens = [token_map.get(t, t) for t in tokens]
                         # Remove duplicated tokens like "ALAM ALAM"
